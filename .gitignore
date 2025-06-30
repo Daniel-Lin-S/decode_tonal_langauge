@@ -1,0 +1,9 @@
+data
+audios
+figures
+logs
+notebooks
+*.sh
+_*.py
+*.md
+__pycache__

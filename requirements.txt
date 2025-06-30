@@ -1,0 +1,6 @@
+scipy=1.15.3
+torch=2.5.1
+torchmetrics=1.7.3
+librosa
+textgrid=1.6.1
+tdt=0.6.8
