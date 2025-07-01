@@ -102,8 +102,10 @@ if __name__ == '__main__':
     # TODO add channel filter
     if params.target == 'tones':
         all_erps, labels = dataset['ecog'], dataset['tone'].flatten()
+        all_erps = all_erps[:, tone_discriminative_channels, :]
     elif params.target == 'syllables':
         all_erps, labels = dataset['ecog'], dataset['syllable'].flatten()
+        all_erps = all_erps[:, syllables_discriminative_channels, :]
     else:
         raise ValueError(
             f"Invalid target '{params.target}'. "

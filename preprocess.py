@@ -54,7 +54,8 @@ parser.add_argument(
 )
 
 
-freq_range = (70, 150)  # High gamma frequency range
+# TODO turn this into config file
+freq_ranges = (70, 150)  # High gamma frequency range
 freq_band = 'hga'
 
 args = parser.parse_args()
@@ -104,7 +105,7 @@ for dir in os.listdir(args.tdt_dir):
     ecog_down = downsample(data, ecog_freq, args.downsample_freq)
 
     ecog_filtered = hilbert_filter(
-        ecog_down, args.downsample_freq, freq_range=freq_range)
+        ecog_down, args.downsample_freq, freq_ranges=freq_ranges)
 
     if args.normalisation == 'zscore':
         ecog_normalised = zscore(ecog_filtered)

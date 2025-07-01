@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from scipy.fft import fft, ifft
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from scipy import signal
 
 
@@ -12,7 +12,7 @@ def hilbert_filter(
     octspace: float = 1/7,
     filterbank_bias: float = math.log10(0.39),
     filterbank_slope: float = 0.5,
-    freq_range: Optional[Tuple[float, float]] = None
+    freq_ranges: Optional[List[Tuple[float, float]]] = None
 ) -> np.ndarray:
     """
     Apply a Gaussian Hilbert filter bank to multichannel data.
@@ -40,21 +40,30 @@ def hilbert_filter(
         Hilbert-transformed envelope signals,
         shape (n_channels, n_timepoints)
     """
-    C, T = data.shape
-    min_freq = freq_range[0] if freq_range else 0
-    max_freq = freq_range[1] if freq_range else sampling_rate // 2
-    max_oct = math.log2(max_freq / f0)
+    if isinstance(freq_ranges, tuple):
+        freq_ranges = [freq_ranges]
+    elif freq_ranges is None:
+        freq_ranges = [(0, sampling_rate // 2)]
 
-    # Generate center frequencies
+    C, T = data.shape
+
     center_freqs = []
     sigma_fs = []
-    f = f0
-    while math.log2(f / f0) < max_oct:
-        if f >= min_freq:
-            center_freqs.append(f)
-            sigma_fs.append(10 ** (
-                filterbank_bias + filterbank_slope * math.log10(f)))
-        f = f * (2 ** octspace)
+
+    for freq_range in freq_ranges:
+        min_freq = freq_range[0] if freq_range else 0
+        max_freq = freq_range[1] if freq_range else sampling_rate // 2
+        max_oct = math.log2(max_freq / f0)
+
+        # Generate center frequencies
+        f = f0
+        while math.log2(f / f0) < max_oct:
+            if f >= min_freq:
+                center_freqs.append(f)
+                sigma_fs.append(10 ** (
+                    filterbank_bias + filterbank_slope * math.log10(f))
+                )
+            f = f * (2 ** octspace)
 
     center_freqs = np.array(center_freqs)
     sigma_fs = np.array(sigma_fs) * np.sqrt(2)

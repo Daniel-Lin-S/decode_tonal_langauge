@@ -5,5 +5,5 @@ logs
 notebooks
 *.sh
 _*.py
-*.md
+*notes.md
 __pycache__
