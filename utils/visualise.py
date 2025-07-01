@@ -3,6 +3,8 @@ from matplotlib.cm import get_cmap
 import numpy as np
 from typing import List, Optional
 
+from scipy.io import loadmat
+
 
 def plot_training_losses(
         losses: List[List[float]],
@@ -206,3 +208,73 @@ def plot_channel_mean_std(
         plt.close()
     else:
         plt.show()
+
+
+def plot_discriminative_channel(
+        mat_file_path: str, channel_idx: int,
+        sampling_rate: int,
+        label_name: str = 'syllable',
+        recording_name: str = 'ecog',
+        onset_time: Optional[int] = None,
+        figure_path: Optional[str]=None
+    ) -> None:
+    """
+    Plot the discriminative power of a specific channel over time.
+    
+    Parameters
+    ----------
+    mat_file_path : str
+        Path to the .mat file containing the recording and labels.
+    channel_idx : int
+        Index of the channel to plot.
+    sampling_rate : int
+        Sampling rate of the recording (in Hz).
+    label_name : str, optional
+        Name of the label to test (default is 'syllable').
+    recording_name : str, optional
+        Name of the recording to test (default is 'ecog').
+    onset_time : int, optional
+        The time of event onset in seconds.
+        (relative to the start of the recording)
+    figure_path : str, optional
+        Path to save the figure. If None, the figure
+        will be plotted but not saved.
+    """
+    data = loadmat(mat_file_path)
+    series = data[recording_name]
+    labels = data[label_name].squeeze()
+
+    unique_labels = np.unique(labels)
+
+    for label in unique_labels:
+        label_data = series[labels == label, channel_idx, :]
+        mean_data = np.mean(label_data, axis=0)
+        std_data = np.std(label_data, axis=0)
+        sem_data = std_data / np.sqrt(label_data.shape[0])
+
+        if onset_time is not None:
+            timepoints = np.arange(
+                mean_data.shape[0]) / sampling_rate - onset_time
+            timepoints = timepoints.astype(float)
+        else:
+            timepoints = np.arange(mean_data.shape[0]) / sampling_rate
+
+        plt.plot(timepoints, mean_data, label=f'{label_name} {label}')
+        plt.fill_between(
+            timepoints, mean_data - sem_data, mean_data + sem_data,
+            alpha=0.2, label=f'{label_name} {label} ±1 SEM'
+        )
+    if onset_time is not None:
+        plt.axvline(x=0, color='k', linestyle='--', label='Onset')
+    
+    plt.title(f'Channel {channel_idx} Discriminative Power')
+    plt.xlabel('Timepoints')
+    plt.ylabel('Amplitude')
+    plt.legend()
+
+    if figure_path:
+        plt.savefig(figure_path, dpi=500)
+        plt.close()
+    else:
+        plt.show()
+
