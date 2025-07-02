@@ -278,3 +278,75 @@ def plot_discriminative_channel(
     else:
         plt.show()
 
+
+def plot_rest_erp(
+        data: dict, rest_recording_name: str,
+        erp_recording_name: str, 
+        channel_idx: int,
+        sampling_rate: int=400,
+        figure_path: Optional[str]=None
+    ) -> None:
+    """
+    Compare the activity of rest and ERP recordings for a given channel by plotting
+    the mean activity ± SEM.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary containing the rest recording and ERP recording data.
+    rest_recording_name : str
+        Name of the rest recording column (e.g., 'ecog_rest').
+    erp_recording_name : str
+        Name of the ERP recording column (e.g., 'ecog').
+    channel_idx : int
+        Index of the channel to compare.
+    sampling_rate : int
+        Sampling rate of the data (default: 400 Hz).
+    figure_path : Optional[str], default=None
+        The file path where the plot will be saved.
+        If None, the plot will be displayed
+        interactively instead of being saved.
+
+    Returns
+    -------
+    None
+    """
+    rest_data = data[rest_recording_name][:, channel_idx, :]
+    erp_data = data[erp_recording_name][:, channel_idx, :]
+
+    if rest_data.shape[1] != erp_data.shape[1]:
+        raise ValueError(
+            "Rest and ERP data must have the same number of timepoints.")
+    
+    n_timepoints = rest_data.shape[1]
+
+    rest_mean = rest_data.mean(axis=0)
+    rest_sem = rest_data.std(axis=0) / np.sqrt(rest_data.shape[0])
+
+    erp_mean = erp_data.mean(axis=0)
+    erp_sem = erp_data.std(axis=0) / np.sqrt(erp_data.shape[0])
+
+    time = np.linspace(0, n_timepoints / sampling_rate, n_timepoints)
+
+    # Plot
+    plt.figure(figsize=(12, 6))
+    plt.plot(time, rest_mean, label=f'{rest_recording_name} (Rest)', color='blue')
+    plt.fill_between(
+        time, rest_mean - rest_sem, rest_mean + rest_sem, color='blue', alpha=0.2)
+
+    plt.plot(time, erp_mean, label=f'{erp_recording_name} (ERP)', color='orange')
+    plt.fill_between(
+        time, erp_mean - erp_sem, erp_mean + erp_sem, color='orange', alpha=0.2)
+
+    plt.title(f'Comparison of Rest and ERP Activity for Channel {channel_idx}',
+              fontsize=18)
+    plt.xlabel('Time (s)', fontsize=16)
+    plt.ylabel('Amplitude', fontsize=16)
+    plt.legend()
+    plt.grid(True)
+    
+    if figure_path:
+        plt.savefig(figure_path, dpi=400, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()

@@ -99,7 +99,7 @@ if __name__ == '__main__':
 
     dataset = loadmat(params.sample_path)
 
-    # TODO add channel filter
+    # TODO add channel selector
     if params.target == 'tones':
         all_erps, labels = dataset['ecog'], dataset['tone'].flatten()
         all_erps = all_erps[:, tone_discriminative_channels, :]

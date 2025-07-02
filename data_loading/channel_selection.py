@@ -1,11 +1,10 @@
 import numpy as np
 from scipy.stats import f_oneway
-from scipy.io import loadmat
-from typing import Dict
+from typing import Dict, Tuple, List
 
 
 def test_discriminative_power(
-        mat_file_path: str, label_name: str,
+        data: dict, label_name: str,
         recording_name: str='ecog'
     ) -> Dict[str, np.ndarray]:
     """
@@ -14,15 +13,17 @@ def test_discriminative_power(
 
     Parameters
     ----------
-    mat_file_path : str
-        Path to the .mat file containing 'ecog' and labels.
+    data : dict
+        Dictionary containing the recordings and labels.
         The recording must have shape (n_samples, n_channels, n_timepoints).
         And the labels must have shape (n_samples, 1) or (1, n_samples)
         with values being integers (e.g., categorical labels).
     label_name : str
         Name of the label to test (e.g., 'syllable' or 'tone').
     recording_name : str, optional
-        Name of the recording to test (default is 'ecog').
+        Name of the event-related potential recordings
+        should have the same length as lables.
+        (default is 'ecog').
 
     Returns
     -------
@@ -32,16 +33,28 @@ def test_discriminative_power(
         Format: {'f_stat': np.ndarray, 'p_value': np.ndarray}
         Both arrays have shape (n_channels, n_timepoints).
     """
-    # Load the .mat file
-    data = loadmat(mat_file_path)
-    series = data[recording_name]  # (n_samples, n_channels, n_timepoints)
+    try:
+        series = data[recording_name]
+    except KeyError:
+        raise KeyError(
+            f"Recording '{recording_name}' not found in data."
+            f"Available keys: {list(data.keys())}"
+        )
+
     if series.ndim != 3:
         raise ValueError(
             f"Recording '{recording_name}' must be a 3D array "
             "(n_samples, n_channels, n_timepoints)."
         )
 
-    labels = data[label_name].squeeze()  #  (n_samples,)
+    try:
+        labels = data[label_name].squeeze()  #  (n_samples,)
+    except KeyError:
+        raise KeyError(
+            f"Labels '{label_name}' not found in data."
+            f"Available keys: {list(data.keys())}"
+        )
+
     if labels.ndim != 1:
         raise ValueError(
             f"Labels '{label_name}' must be a 1D array "
@@ -137,3 +150,93 @@ def find_significant_channels(
                 significant_channels.append(ch)
         
     return significant_channels
+
+
+def find_active_channels(
+    data: dict,
+    rest_recording_name: str = 'ecog_rest',
+    erp_recording_name: str = 'ecog',
+    p_val_threshold: float = 0.05,
+    length_threshold: int = 10
+) -> Tuple[List[int], List[int]]:
+    """
+    Find channels that are significantly active during the ERP recording
+    by comparing it to the rest recording using one-way ANOVA.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary that contains the recordings during
+        the rest period and the ERP recording,
+        both should be numpy arrays with shape
+        (n_samples, n_channels, n_timepoints).
+        Number of samples can be different for each recording,
+        but the number of channels and timepoints must match.
+    rest_recording_name : str, optional
+        Name of the rest recording (default is 'ecog_rest').
+    erp_recording_name : str, optional
+        Name of the ERP recording (default is 'ecog').
+        Note: each sample of the ERP recording and the rest recording
+    p_val_threshold : float, optional
+        Significance threshold for p-values (default is 0.05).
+    length_threshold : int, optional
+        Minimum length of consecutive significant timepoints
+        to consider a channel active (default is 10).
+
+    Returns
+    -------
+    active_channels : List[int]
+        List of indices of channels that are significantly active.
+    max_lengths : List[int]
+        List of maximum lengths of consecutive significant timepoints
+        for each active channel.
+    """
+
+    try:
+        rest_samples = data[rest_recording_name]
+    except KeyError:
+        raise KeyError(
+            f"Recording '{rest_recording_name}' not found in data."
+            f"Available keys: {list(data.keys())}"
+        )
+    
+    try:
+        erp_samples = data[erp_recording_name]
+    except KeyError:
+        raise KeyError(
+            f"Recording '{erp_recording_name}' not found in data."
+            f"Available keys: {list(data.keys())}"
+        )
+
+    if erp_samples.shape[1:2] != rest_samples.shape[1:2]:
+        raise ValueError(
+            f"Shape mismatch between '{erp_recording_name}' "
+            f"and '{rest_recording_name}': "
+            f"{erp_samples.shape[1:2]} vs {rest_samples.shape[1:2]}."
+        )
+
+    # perform one-way ANOVA for each channel
+    n_channels = rest_samples.shape[1]
+    active_channels = []
+    max_lengths = []
+
+    for ch in range(n_channels):
+        rest_data = rest_samples[:, ch, :]
+        erp_data = erp_samples[:, ch, :]
+
+        result = f_oneway(rest_data, erp_data)
+
+        p_vals = result.pvalue
+
+        significant_points = np.where(p_vals < p_val_threshold)[0]
+
+        if len(significant_points) == 0:
+            continue
+
+        max_len = get_max_length(np.where(p_vals < p_val_threshold)[0])
+
+        if max_len > length_threshold:
+            active_channels.append(ch)
+            max_lengths.append(max_len)
+    
+    return active_channels, max_lengths

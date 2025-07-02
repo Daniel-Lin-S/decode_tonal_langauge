@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from textgrid import TextGrid
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from scipy.io import loadmat, savemat
 
 import warnings
@@ -224,7 +224,8 @@ def extract_ecog_audio(
         ecog_kwords: Optional[List[str]]=None,
         audio_kwords: Optional[List[str]]=None,
         length: float = 1.0,
-        output_path: Optional[str]=None
+        output_path: Optional[str]=None,
+        rest_period: Optional[Tuple[float]] = None
     ) -> Dict[str, np.ndarray]:
     """
     Extracts ECoG and audio samples based on the intervals
@@ -259,11 +260,27 @@ def extract_ecog_audio(
     length : float, optional
         Length of the samples to extract, in seconds.
         Defaults to 1.0.
-    output_path : Optional[str], optional
+    output_path : str, optional
         Path to save the extracted samples (in mat format).
-        If None, samples will be returned.
+    rest_period : Tuple[float], optional
+        Tuple of (start, end) in seconds for the rest period.
+        Extracted for reference. 
+        If not given, rest samples will not be extracted.
+    
+    Returns
+    -------
+    Dict[str, np.ndarray]
+        Dictionary containing the extracted samples:
+        - 'ecog': ECoG samples, shape (n_samples, n_channels, sample_length)
+        - 'audio': Audio samples, shape (n_samples, sample_length)
+        - 'syllable': Syllable labels, shape (n_samples,)
+        - 'tone': Tone labels, shape (n_samples,)
+        - 'ecog_rest': ECoG rest samples (if rest_period is given),
+           shape (n_rest_samples, n_channels, sample_length)
     """
-    ecog_samples = {}
+    erp_samples = {}   # event related potentials of ECoG
+    if rest_period is not None:
+        ecog_rest_samples = {}
     audio_samples = {}
     syllable_labels = {}
     tone_labels = {}
@@ -276,7 +293,7 @@ def extract_ecog_audio(
             if block not in intervals:
                 continue
 
-            if block in ecog_samples:
+            if block in erp_samples:
                 warnings.warn(
                     'Found multiple ECoG files for block '
                     f'{block}, skipping file {file}. '
@@ -308,7 +325,7 @@ def extract_ecog_audio(
                 ecog_data.shape[1] / ecog_sampling_rate, ' s'
             )
 
-            ecog_samples[block] = []
+            erp_samples[block] = []
 
             for _, row in intervals[block].iterrows():
                 start = int(row['start'] * ecog_sampling_rate)
@@ -321,10 +338,10 @@ def extract_ecog_audio(
                         f"Corresponding interval: {row}. "
                     )
 
-                ecog_samples[block].append(ecog_data[:, start:end])
+                erp_samples[block].append(ecog_data[:, start:end])
             
-            ecog_samples[block] = np.array(
-                ecog_samples[block])  # (n_samples, n_channels, sample_length)
+            erp_samples[block] = np.array(
+                erp_samples[block])  # (n_samples, n_channels, sample_length)
             
             tone_labels[block] = intervals[block]['tone'].to_numpy()
 
@@ -332,6 +349,35 @@ def extract_ecog_audio(
                 intervals[block]['syllable'], categories=syllables)
             syllable_codes = syllable_categories.codes
             syllable_labels[block] = np.array(syllable_codes)  # (n_samples, )
+
+            if rest_period is not None:
+                interval_earliest = intervals[block]['start'].min()
+
+                segment_length = int(length * ecog_sampling_rate)
+                rest_start = int(rest_period[0] * ecog_sampling_rate)
+                rest_end = int(rest_period[1] * ecog_sampling_rate)
+
+                if rest_period[1] > interval_earliest:
+                    warnings.warn(
+                        f"Rest period end ({rest_period[1]} s) is after the earliest interval start "
+                        f"for block {block} (earliest event time: {interval_earliest} s). "
+                        f"Reducing rest period end ..."
+                    )
+                    rest_end = int(interval_earliest * ecog_sampling_rate)
+
+                # extract rest segments
+                ecog_rest_samples[block] = []
+
+                for i in range(rest_start, rest_end, segment_length):
+                    if i + segment_length > rest_end:
+                        break
+
+                    ecog_rest_samples[block].append(
+                        ecog_data[:, i:i + segment_length]
+                    )
+                
+                ecog_rest_samples[block] = np.array(
+                    ecog_rest_samples[block])
         
         elif _audio_condition(file, audio_kwords):  # Audio Recording
             block = extract_block_id(file)
@@ -389,11 +435,11 @@ def extract_ecog_audio(
         
     block_ids = audio_samples.keys()
 
-    if ecog_samples.keys() != block_ids:
+    if erp_samples.keys() != block_ids:
         raise ValueError(
             "Mismatch between ECoG and audio samples blocks. "
             "Ensure both ECoG and audio files are present for each block."
-            f" ECoG blocks found: {ecog_samples.keys()},"
+            f" ECoG blocks found: {erp_samples.keys()},"
             f" Audio blocks found: {block_ids}."
         )
 
@@ -404,37 +450,47 @@ def extract_ecog_audio(
         )
 
     # merge blocks
-    all_ecog_samples = []
+    all_erp_samples = []
     all_audio_samples = []
     all_syllable_labels = []
     all_tone_labels = []
 
     for block in block_ids:
-        all_ecog_samples.append(ecog_samples[block])
+        all_erp_samples.append(erp_samples[block])
         all_audio_samples.append(audio_samples[block])
         all_syllable_labels.append(syllable_labels[block])
         all_tone_labels.append(tone_labels[block])
 
-    all_ecog_samples = np.concatenate(all_ecog_samples, axis=0)
+    all_erp_samples = np.concatenate(all_erp_samples, axis=0)
     all_audio_samples = np.concatenate(all_audio_samples, axis=0)
     all_syllable_labels = np.concatenate(all_syllable_labels, axis=0)
     all_tone_labels = np.concatenate(all_tone_labels, axis=0)
 
-    print('ECoG samples shape:', all_ecog_samples.shape)
+    if rest_period is not None:
+        all_ecog_samples_rest = []
+        for block in block_ids:
+            all_ecog_samples_rest.append(ecog_rest_samples[block])
+        all_ecog_samples_rest = np.concatenate(all_ecog_samples_rest, axis=0)
+        print('ECoG rest samples shape:', all_ecog_samples_rest.shape)
+
+    print('ECoG ERP samples shape:', all_erp_samples.shape)
     print('Audio samples shape:', all_audio_samples.shape)
     print('Syllable labels shape:', all_syllable_labels.shape)
     print('Tone labels shape:', all_tone_labels.shape)
 
     # save as mat file
     output_data = {
-        'ecog': all_ecog_samples,
+        'ecog': all_erp_samples,
         'audio': all_audio_samples,
         'syllable': all_syllable_labels.flatten(),
         'tone': all_tone_labels.flatten()
     }
 
+    if rest_period is not None:
+        output_data['ecog_rest'] = all_ecog_samples_rest
+
     if output_path is not None:
         savemat(output_path, output_data)
         print(f"ECoG and audio samples saved to {output_path}")
-    else:
-        return output_data
+
+    return output_data

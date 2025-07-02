@@ -1,5 +1,6 @@
 import os
 import argparse
+from scipy.io import loadmat
 
 from data_loading.channel_selection import (
     test_discriminative_power,
@@ -57,8 +58,10 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+
+data = loadmat(args.mat_file_path)
 results = test_discriminative_power(
-    args.mat_file_path, args.label_name,
+    data, args.label_name,
     recording_name=args.recording_name)
 
 # Print results

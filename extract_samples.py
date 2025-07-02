@@ -1,3 +1,23 @@
+"""
+Align ECoG and audio samples using TextGrid files marking the intervals
+for each read word or syllable.
+
+The name of each interval in the TextGrid should have format [tone][syllable],
+where the tone is the digit id for tone and syllable is a string marking the
+syllable spoken in the interval, e.g. "0i", "1a", etc.
+
+File structure of each saved mat file:
+- 'ecog': The ECoG data within each interval (event), a numpy array of shape 
+    (n_samples, n_channels, n_timepoints).
+    where n_samples stands for the number of intervals.
+- 'audio': The audio data within each interval, a numpy array of shape
+    (n_samples, n_timepoints).
+- 'syllable': The syllable spoken in each sample, shape (n_samples,)
+- 'tone': The tone id for each sample, shape (n_samples,).
+- 'ecog_rest': The ECoG data during the rest period, a numpy array of shape
+    (n_rest_samples, n_channels, n_timepoints).
+"""
+
 from data_loading.text_align import handle_textgrids, extract_ecog_audio
 import os
 import argparse
@@ -21,12 +41,14 @@ parser.add_argument(
 parser.add_argument(
     '--audio_kwords', default=None, type=str, nargs='+',
     help='List of keywords to identify audio files. '
-         'Defaults to None.'
+    'only files containing these keywords will be considered for audio extraction. '
+    'Defaults to None.'
 )
 parser.add_argument(
     '--ecog_kwords', default=None, type=str, nargs='+',
     help='List of keywords to identify ECoG files. '
-         'Defaults to None.'
+    'only files containing these keywords will be considered for ECoG extraction. '
+    'Defaults to None.'
 )
 parser.add_argument(
     '--output_path', default='data/samples/samples.mat', type=str,
@@ -37,7 +59,10 @@ parser.add_argument(
     help='List of block numbers to process. If None, all blocks will be processed.'
 )
 
-syllables = ['i', 'a']
+
+# TODO move this into a config file
+syllables = ['i', 'a']  # syllable marks in the TextGrid files.
+rest_period = (0.0, 25.0)  # Default rest period for ECoG extraction.
 
 
 args = parser.parse_args()
@@ -76,4 +101,5 @@ if __name__ == '__main__':
         audio_kwords=args.audio_kwords,
         ecog_kwords=args.ecog_kwords,
         output_path=args.output_path,
+        rest_period=rest_period
     )
