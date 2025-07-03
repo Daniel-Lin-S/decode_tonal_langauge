@@ -4,3 +4,4 @@ torchmetrics=1.7.3
 librosa
 textgrid=1.6.1
 tdt=0.6.8
+matplotlib_venn=1.1.2

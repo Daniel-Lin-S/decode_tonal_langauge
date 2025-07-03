@@ -65,5 +65,9 @@ All model architectures and trainers and located in the repository `models`.
 ### Defining new models
 New models can be defined by inheriting base models `classifier.ClassifierModel` and `synthesisModels.SynthesisModel`. 
 
+## Visualisation
+You may find some functions in `utils.visualise` helpful for generating figures
+to visualise your datasets from various aspects.
+
 ## Contact
 If you have any questions, you may contact me by email daniel.kansaki@outlook.com
