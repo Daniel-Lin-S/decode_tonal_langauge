@@ -170,11 +170,17 @@ if __name__ == '__main__':
                 n_syllable_channels, seq_length, n_syllables).to(params.device)
     tone_model = toneModel.Model(
                 n_tone_channels, seq_length, n_tones).to(params.device)
+
+    train_classifiers = True
     
     if params.syllable_model_path is not None:
         syllable_model.load_state_dict((torch.load(params.syllable_model_path)))
     if params.tone_model_path is not None:
         tone_model.load_state_dict((torch.load(params.tone_model_path)))
+
+    if params.syllable_model_path is None and params.tone_model_path is None:
+        # use pre-trained weights
+        train_classifiers = False
 
     n_samples, n_channels, n_timepoints = ecog_non.shape
 
@@ -218,7 +224,8 @@ if __name__ == '__main__':
             device=params.device,
             tone_dynamic_mapping=tone_dynamic_mapping,
             learning_rate=params.lr,
-            verbose=trainer_verbose
+            verbose=trainer_verbose,
+            train_classifiers=train_classifiers
         )
 
         if params.verbose > 0:
