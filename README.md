@@ -1,4 +1,4 @@
-# Tonal Language 
+# Tonal Language Decoding
 Decode a tonal language from brain signals.
 
 This is an unofficial implementation of the paper Yan Liu et al. ,Decoding and synthesizing tonal language speech from brain activity.Sci. Adv.9,eadh0478(2023).DOI:10.1126/sciadv.adh0478
