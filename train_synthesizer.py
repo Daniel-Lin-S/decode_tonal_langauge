@@ -19,7 +19,7 @@ from data_loading.channel_selection import select_non_discriminative_channels
 from utils.utils import set_seeds
 from utils.visualise import plot_training_losses
 from utils.audio import mel_to_audio, compare_mels, audio_to_mel
-from models.synthesisModel import SynthesisModel, SynthesisLite
+from models.synthesisModels import SynthesisModelCNN, SynthesisLite
 from models.synthesisTrainer import SynthesisTrainer
 from models import syllableModel, toneModel
 

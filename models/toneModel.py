@@ -1,10 +1,11 @@
 import torch
 from torch import nn
-
 from typing import Dict
 
+from .classifier import ClassifierModel
 
-class Model(nn.Module):
+
+class Model(ClassifierModel):
     """
     A PyTorch model for classifying tones based on ECoG data.
 
@@ -59,7 +60,7 @@ class Model(nn.Module):
             Slope of the negative part of the LeakyReLU activation function,
             by default 0.01.
         """
-        super(Model, self).__init__()
+        super(Model, self).__init__(n_classes)
 
         if lstm_dim % input_length != 0:
             raise ValueError(
@@ -67,7 +68,6 @@ class Model(nn.Module):
                 f"by input_length ({input_length})."
             )
 
-        self.n_classes = n_classes
         self.n_channels = n_channels
         self.input_length = input_length
 

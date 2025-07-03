@@ -8,6 +8,8 @@ from torchmetrics.classification import (
 
 from typing import Tuple, List, Optional
 
+from .classifier import ClassifierModel
+
 
 class ClassifierTrainer:
     """
@@ -31,7 +33,7 @@ class ClassifierTrainer:
     """
 
     def __init__(
-            self, model: torch.nn.Module,
+            self, model: ClassifierModel,
             device: torch.device = torch.device("cpu"),
             n_classes: Optional[int]=None,
             learning_rate: float=0.0005,

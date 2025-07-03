@@ -7,6 +7,9 @@ from typing import Tuple, List, Dict
 
 from data_loading.utils import prepare_tone_dynamics
 
+from models.classifier import ClassifierModel
+from models.synthesisModels import SynthesisModel
+
 
 def compute_mcd(true_mcc: torch.Tensor, pred_mcc: torch.Tensor) -> float:
     """
@@ -63,9 +66,9 @@ class SynthesisTrainer:
 
     def __init__(
             self,
-            synthesize_model: torch.nn.Module,
-            tone_model: torch.nn.Module,
-            syllable_model: torch.nn.Module,
+            synthesize_model: SynthesisModel,
+            tone_model: ClassifierModel,
+            syllable_model: ClassifierModel,
             tone_dynamic_mapping: Dict[str, List[int]],
             device: torch.device = torch.device("cpu"),
             learning_rate: float=0.0005,

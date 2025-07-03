@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
-
 from typing import Dict
 
+from .classifier import ClassifierModel
 
-class Model(nn.Module):
+
+class Model(ClassifierModel):
     """
     A PyTorch model for classifying syllables from ECoG data.
     Architecture: Temporal convolutional layers followed by fully connected layers.
@@ -42,12 +43,10 @@ class Model(nn.Module):
             Slope of the negative part of the LeakyReLU activation function,
             by default 0.01.
         """
-        super(Model, self).__init__()
+        super(Model, self).__init__(n_classes)
 
         if input_channels <= 0:
             raise ValueError("Input channels must be a positive integer.")
-
-        self.n_classes = n_classes
 
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(1, 512, kernel_size=(3, 1), stride=1, padding=0),

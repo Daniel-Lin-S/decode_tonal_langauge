@@ -1,7 +1,41 @@
 import torch
 from torch import nn
 
-class SynthesisModel(nn.Module):
+from abc import ABC, abstractmethod
+
+
+class SynthesisModel(nn.Module, ABC):
+    """
+    Abstract base class for a synthesis model that can be trained
+    using the SynthesisTrainer.
+    """
+
+    @abstractmethod
+    def forward(
+        self, inputs_non: torch.Tensor,
+        inputs_label: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        inputs_non : torch.Tensor
+            Input tensor for non-linguistic features
+            with shape (batch_size, input_size).
+        inputs_label : torch.Tensor
+            Input tensor for tone and syllable dynamics
+            with shape (batch_size, label_size).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor with shape (batch_size, output_size).
+            The output_size can be variable depending on the target.
+            e.g. number of coefficients in the Mel spectrogram.
+        """
+        pass
+
+
+class SynthesisModelCNN(SynthesisModel):
     def __init__(
             self,
             output_dim: int,
@@ -30,7 +64,7 @@ class SynthesisModel(nn.Module):
         negative_slope : float
             Slope of negative part (x < 0) for LeakyReLU activation functions.
         """
-        super(SynthesisModel, self).__init__()
+        super(SynthesisModelCNN, self).__init__()
 
         self.n_channels = n_channels
         self.n_timepoints = n_timepoints
@@ -154,7 +188,7 @@ class SynthesisModel(nn.Module):
         return temporal_length
 
 
-class SynthesisLite(nn.Module):
+class SynthesisLite(SynthesisModel):
     def __init__(
             self,
             output_dim: int,
@@ -186,7 +220,7 @@ class SynthesisLite(nn.Module):
         negative_slope : float
             Slope of negative part (x < 0) for LeakyReLU activation functions.
         """
-        super().__init__()
+        super(SynthesisLite, self).__init__()
 
         # ECoG block: depthwise-separable Conv1D + 2 poolings
         self.ecog_conv = nn.Sequential(
