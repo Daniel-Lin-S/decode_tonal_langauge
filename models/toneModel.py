@@ -123,7 +123,8 @@ class Model(nn.Module):
         Returns
         -------
         torch.Tensor
-            Output tensor of shape (B, n_classes)
+            Output tensor of shape (B, n_classes),
+            these are the predicted class probabilities.
         """
         batch_size, n_channels, n_timepoints = x.shape
 

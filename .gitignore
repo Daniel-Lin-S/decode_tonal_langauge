@@ -4,6 +4,7 @@ figures
 logs
 notebooks
 configs
+checkpoints
 *.sh
 _*.py
 __pycache__

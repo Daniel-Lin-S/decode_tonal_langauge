@@ -44,6 +44,12 @@ parser.add_argument(
     '--config_file', required=True, type=str,
     help='Path to the JSON file with necessary hyperparameters'
 )
+parser.add_argument(
+    '--model_dir', type=str, required=False,
+    default=None,
+    help='Directory to save the trained model. '
+    'If not specified, the model will not be saved.'
+)
 # ----- Experiment Settings -------
 parser.add_argument(
     '--target', type=str, required=True,
@@ -99,6 +105,9 @@ if __name__ == '__main__':
 
     if not os.path.exists(params.figure_dir):
         os.makedirs(params.figure_dir)
+
+    if params.model_dir is not None and not os.path.exists(params.model_dir):
+        os.makedirs(params.model_dir)
 
     np.random.seed(params.seed)
     seeds = np.random.randint(0, 10000, params.repeat)
@@ -165,7 +174,7 @@ if __name__ == '__main__':
                 n_channels, seq_length, n_classes).to(params.device)
 
         if params.verbose > 0 and i == 0:
-            print(f"Model summary: {model.get_layer_nparams()}")
+            print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
         trainer = ClassifierTrainer(
             model, device=params.device,
@@ -180,6 +189,16 @@ if __name__ == '__main__':
             train_loader, epochs=params.epochs,
             verbose=trainer_verbose
         )
+
+        # save the model
+        if params.model_dir is not None:
+            model_save_path = os.path.join(
+                params.model_dir, f"{params.target}_model_seed_{seed}.pt")
+            
+            torch.save(model.state_dict(), model_save_path)
+            
+            if params.verbose > 0:
+                print(f"Model saved to {model_save_path}")
 
         accuracy, f1, conf = trainer.evaluate(test_loader)
         accuracies.append(accuracy)

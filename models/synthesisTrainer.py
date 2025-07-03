@@ -3,7 +3,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import NAdam
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Dict
+
+from data_loading.utils import prepare_tone_dynamics
 
 
 def compute_mcd(true_mcc: torch.Tensor, pred_mcc: torch.Tensor) -> float:
@@ -60,20 +62,33 @@ class SynthesisTrainer:
     """
 
     def __init__(
-            self, model: torch.nn.Module,
+            self,
+            synthesize_model: torch.nn.Module,
+            tone_model: torch.nn.Module,
+            syllable_model: torch.nn.Module,
+            tone_dynamic_mapping: Dict[str, List[int]],
             device: torch.device = torch.device("cpu"),
             learning_rate: float=0.0005,
             beta_1: float=0.9,
             beta_2: float=0.999,
             epsilon: float=1e-08,
             schedule_decay: float=0.004,
-            verbose: bool=True
+            verbose: bool=True,
+            train_classifiers: bool=False
         ) -> None:
         """
         Parameters
         ----------
-        model : torch.nn.Module
-            The model to be trained.
+        synthesize_model : torch.nn.Module
+            The speech synthesis model to be trained.
+        tone_model : torch.nn.Module
+            The tone classification model.
+        syllable_model : torch.nn.Module
+            The syllable classification model.
+        tone_dynamic_mapping : dict
+            A dictionary mapping tone indices to their
+            corresponding dynamics.
+            e.g. "2" : [1, 2,  3, 2, 1]
         device : torch.device, optional
             The device on which the model will be trained,
             by default torch.device("cpu").
@@ -95,19 +110,26 @@ class SynthesisTrainer:
         verbose : bool, optional
             If True, prints the number of trainable parameters,
             by default True.
+        train_classifiers : bool, optional
+            If True, the tone and syllable classification models
+            will be trained along with the synthesis model.
         """
         self.device = device
-        self.model = model.to(device)
+        self.train_classifiers = train_classifiers
+        self.tone_dynamic_mapping = tone_dynamic_mapping
+        self.model = synthesize_model.to(device)
 
         if verbose:
             n_trainable_params = sum(
-                p.numel() for p in model.parameters() if p.requires_grad
+                p.numel() for p in self.model.parameters() if p.requires_grad
             )
 
-            print(f"Number of trainable parameters: {n_trainable_params:,}")
+            print(
+                "Number of trainable parameters in the synthesis model: "
+                f"{n_trainable_params:,}")
 
         self.optimizer = NAdam(
-            model.parameters(),
+            self.model.parameters(),
             lr=learning_rate,
             betas=(beta_1, beta_2),
             eps=epsilon,
@@ -116,6 +138,15 @@ class SynthesisTrainer:
 
         # Mean absolute error 
         self.criterion = nn.L1Loss()
+
+        self.tone_model = tone_model
+        self.tone_model.to(device)
+        self.syllable_model = syllable_model
+        self.syllable_model.to(device)
+
+        if not train_classifiers:
+            self.tone_model.eval()
+            self.syllable_model.eval()
 
 
     def train(
@@ -142,16 +173,36 @@ class SynthesisTrainer:
             for each epoch.
         """
         self.model.train()
+
+        if self.train_classifiers:
+            self.tone_model.train()
+            self.syllable_model.train()
+
         history = []
         for epoch in range(epochs):
             epoch_loss = 0
             mcd = 0
-            for inputs_ecog, inputs_labels, targets in train_loader:
+            for inputs_non, inputs_syllable, inputs_tone, targets in train_loader:
                 # forward pass
-                inputs_ecog = inputs_ecog.to(self.device)
-                inputs_labels = inputs_labels.to(self.device)
+                inputs_non = inputs_non.to(self.device)
+                inputs_syllable = inputs_syllable.to(self.device)
+                inputs_tone = inputs_tone.to(self.device)
+
+                tone_labels = torch.argmax(
+                    self.tone_model(inputs_tone), dim=1)
+                syllable_labels = torch.argmax(
+                    self.syllable_model(inputs_syllable), dim=1)
+
+                inputs_label = prepare_tone_dynamics(
+                    self.tone_dynamic_mapping,
+                    tone_labels.cpu().numpy(),
+                    syllable_labels.cpu().numpy()
+                )
+
+                inputs_label = torch.Tensor(inputs_label).to(self.device)
+
                 self.optimizer.zero_grad()
-                outputs = self.model(inputs_ecog, inputs_labels)
+                outputs = self.model(inputs_non, inputs_label)
                 targets = targets.long().to(self.device)
 
                 # loss and metric computations
@@ -194,17 +245,34 @@ class SynthesisTrainer:
             for the test dataset.
         """
         self.model.eval()
+        self.tone_model.eval()
+        self.syllable_model.eval()
 
         recon_mels = []
         origin_mels = []
 
         with torch.no_grad():
             mcd = 0
-            for inputs_ecog, inputs_labels, targets in test_loader:
-                inputs_labels = inputs_labels.to(self.device)
-                inputs_ecog = inputs_ecog.to(self.device)
+            for inputs_non, inputs_syllable, inputs_tone, targets in test_loader:
+                inputs_non = inputs_non.to(self.device)
+                inputs_syllable = inputs_syllable.to(self.device)
+                inputs_tone = inputs_tone.to(self.device)
+
+                # take the label with highest probability
+                tone_labels = torch.argmax(
+                    self.tone_model(inputs_tone), dim=1)
+                syllable_labels = torch.argmax(
+                    self.syllable_model(inputs_syllable), dim=1)
+
+                inputs_label = prepare_tone_dynamics(
+                    self.tone_dynamic_mapping,
+                    tone_labels.cpu().numpy(),
+                    syllable_labels.cpu().numpy()
+                )
+
+                inputs_label = torch.Tensor(inputs_label).to(self.device)
                 targets = targets.to(self.device)
-                outputs = self.model(inputs_ecog, inputs_labels)
+                outputs = self.model(inputs_non, inputs_label)
 
                 mcd += compute_mcd(targets, outputs)
                 recon_mels.append(outputs.cpu())

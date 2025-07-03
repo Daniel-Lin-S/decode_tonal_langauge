@@ -1,3 +1,11 @@
+"""
+Entries required in the config file:
+- `mel_kwargs` (dict): Dictionary with Mel spectrogram parameters.
+- `tone_dynamic_mapping` (dict): Dictionary mapping tone labels to their dynamics.
+- `n_syllables` (int): Number of syllables in the dataset.
+ -`n_tones` (int): Number of tones in the dataset.
+"""
+
 import argparse
 import os
 from scipy.io.wavfile import write as write_wave
@@ -7,12 +15,13 @@ from torch.utils.data import TensorDataset
 import json
 
 from data_loading.dataloaders import split_dataset
-from data_loading.utils import prepare_tone_dynamics
+from data_loading.channel_selection import select_non_discriminative_channels
 from utils.utils import set_seeds
 from utils.visualise import plot_training_losses
 from utils.audio import mel_to_audio, compare_mels, audio_to_mel
 from models.synthesisModel import SynthesisModel, SynthesisLite
 from models.synthesisTrainer import SynthesisTrainer
+from models import syllableModel, toneModel
 
 
 parser = argparse.ArgumentParser(
@@ -40,6 +49,16 @@ parser.add_argument(
 parser.add_argument(
     '--config_file', type=str, default='config.json',
     help='Path to the JSON file with necessary hyperparameters.'
+)
+parser.add_argument(
+    '--syllable_model_path', type=str, default=None,
+    help='Path to the pre-trained syllable classification model. '
+    'If not provided, the model will be trained from scratch.'
+)
+parser.add_argument(
+    '--tone_model_path', type=str, default=None,
+    help='Path to the pre-trained tone classification model. '
+    'If not provided, the model will be trained from scratch.'
 )
 # ----- Audio Settings -------
 parser.add_argument(
@@ -102,14 +121,11 @@ if __name__ == '__main__':
     with open(params.channel_file, 'r') as f:
         channel_selections = json.load(f)
 
-    non_discriminative_channels = set(channel_selections['active_channels'])
-    discriminative_channels = set()
-    for label in ['tone_discriminative', 'syllable_discriminative']:
-        discriminative_channels.update(channel_selections[label])
+    non_discriminative_channels = select_non_discriminative_channels(
+        channel_selections, ['tone_discriminative', 'syllable_discriminative'])
 
-    non_discriminative_channels = list(
-        non_discriminative_channels - discriminative_channels
-    ).sort()
+    print('Found {} non-discriminative channels.'.format(
+        len(non_discriminative_channels)))
 
     # load configuration files
     with open(params.config_file, 'r') as f:
@@ -117,16 +133,20 @@ if __name__ == '__main__':
     
     mel_kwargs = config['mel_kwargs']
     tone_dynamic_mapping = config['tone_dynamic_mapping']
+    n_syllables = config['n_syllables']
+    n_tones = config['n_tones']
 
     # load dataset, compute Mel spectrograms
     dataset = np.load(params.sample_path)
 
-    ecog_samples = dataset['ecog'].squeeze()
-    ecog_samples = ecog_samples[:, non_discriminative_channels, :]
-    audios = dataset['audio']
+    ecog_samples = dataset['ecog']
+    # non-discriminative active channels
+    ecog_non = ecog_samples[:, non_discriminative_channels, :]
+    # extract the syllable discriminative channels
+    ecog_syllables = ecog_samples[:, channel_selections['syllable_discriminative'], :]
+    ecog_tones = ecog_samples[:, channel_selections['tone_discriminative'], :]
 
-    print('Shape of ECoG samples:', ecog_samples.shape)
-    print('Shape of audio samples:', audios.shape)
+    audios = dataset['audio']
 
     mels = []
     for i, audio in enumerate(audios):
@@ -142,33 +162,33 @@ if __name__ == '__main__':
     
     mels_dim = mels.shape[1]  # number of Mel coefficients
 
-    # FIXME Using true labels for now, should use predicted labels
-    tone_labels = dataset['tone'].flatten()
-    syllable_labels = dataset['syllable'].flatten()
+    seq_length = ecog_samples.shape[2]
+    n_syllable_channels = ecog_syllables.shape[1]
+    n_tone_channels = ecog_tones.shape[1]
 
-    if params.verbose > 0:
-        print('Tones in the dataset ', np.unique(tone_labels))
-        print('Syllables in the dataset ', np.unique(syllable_labels))
+    syllable_model = syllableModel.Model(
+                n_syllable_channels, seq_length, n_syllables).to(params.device)
+    tone_model = toneModel.Model(
+                n_tone_channels, seq_length, n_tones).to(params.device)
+    
+    if params.syllable_model_path is not None:
+        syllable_model.load_state_dict((torch.load(params.syllable_model_path)))
+    if params.tone_model_path is not None:
+        tone_model.load_state_dict((torch.load(params.tone_model_path)))
 
-    tone_syllable_features = prepare_tone_dynamics(
-        tone_dynamic_mapping, tone_labels, syllable_labels)
-    print('Shape of tone-syllable features:', tone_syllable_features.shape[1:])
-
-    n_samples, n_channels, n_timepoints = ecog_samples.shape
+    n_samples, n_channels, n_timepoints = ecog_non.shape
 
     if params.verbose > 0:
         print(
             f"Prepared {n_samples} ECoG samples with "
-            f"shape {ecog_samples.shape[1:]}"
-            f" and {tone_syllable_features.shape[1:]} "
-            "dynamic features of syllable and tone labels.")
+            f"shape {ecog_samples.shape[1:]}")
 
-    ecog_samples = torch.tensor(ecog_samples, dtype=torch.float32)
-    tone_syllable_features = torch.tensor(
-        tone_syllable_features, dtype=torch.float32)
+    ecog_non = torch.tensor(ecog_non, dtype=torch.float32)
+    ecog_syllables = torch.tensor(ecog_syllables, dtype=torch.float32)
+    ecog_tones = torch.tensor(ecog_tones, dtype=torch.float32)
     mels = torch.tensor(mels, dtype=torch.float32)
 
-    dataset = TensorDataset(ecog_samples, tone_syllable_features, mels)
+    dataset = TensorDataset(ecog_non, ecog_syllables, ecog_tones, mels)
 
     # repeated trainings with different splits
     mcds = []
@@ -192,8 +212,13 @@ if __name__ == '__main__':
 
         trainer_verbose = params.verbose > 0 and i == 0
         trainer = SynthesisTrainer(
-            model=model, device=params.device,
-            learning_rate=params.lr, verbose=trainer_verbose
+            synthesize_model=model,
+            syllable_model=syllable_model,
+            tone_model=tone_model,
+            device=params.device,
+            tone_dynamic_mapping=tone_dynamic_mapping,
+            learning_rate=params.lr,
+            verbose=trainer_verbose
         )
 
         if params.verbose > 0:
