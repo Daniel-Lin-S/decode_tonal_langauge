@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 from scipy.io import loadmat
 import numpy as np
+import json
 
 from data_loading.channel_selection import find_active_channels
 from utils.visualise import plot_rest_erp
@@ -23,6 +24,10 @@ parser.add_argument(
     '--figure_dir', required=False, type=str,
     help='Directory to save the figures of significant channels.'
     'Warning: This directory will be cleared before saving new figures.'
+)
+parser.add_argument(
+    '--output_file', required=False, type=str,
+    help='Path to save the output JSON file with active channels.'
 )
 parser.add_argument(
     '--rest_recording_name', default='ecog_rest', type=str,
@@ -59,6 +64,34 @@ channels, lengths = find_active_channels(
 )
 
 print(f'Found {len(channels)} active channels')
+
+if args.output_file:
+    output_data = {
+        'active_channels': channels
+    }
+
+    configs_dir = os.path.dirname(args.output_file)
+    if not os.path.exists(configs_dir):
+        os.makedirs(configs_dir)
+    
+    if os.path.exists(args.output_file):
+        # append to existing
+        with open(args.output_file, 'r') as f:
+            try:
+                existing_data = json.load(f)
+            except json.JSONDecodeError:
+                existing_data = {}
+
+        existing_data.update(output_data)
+
+        with open(args.output_file, 'w') as f:
+            json.dump(existing_data, f, indent=4)
+        print('Appended active channels to', args.output_file)
+    else:
+        with open(args.output_file, 'w') as f:
+            json.dump(output_data, f, indent=4)
+        print('Saved active channels to', args.output_file)
+
 
 # plot the distribution of length of significant timpoints
 if args.figure_dir:
