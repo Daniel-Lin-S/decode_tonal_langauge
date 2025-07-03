@@ -213,6 +213,8 @@ def plot_channel_mean_std(
 def plot_discriminative_channel(
         data : dict, channel_idx: int,
         sampling_rate: int,
+        p_vals: np.ndarray,
+        p_threshold: float = 0.05,
         label_name: str = 'syllable',
         recording_name: str = 'ecog',
         onset_time: Optional[int] = None,
@@ -230,6 +232,10 @@ def plot_discriminative_channel(
         Index of the channel to plot.
     sampling_rate : int
         Sampling rate of the recording (in Hz).
+    p_vals : np.ndarray
+        A one dimensional array of shape (n_timepoints, )
+        with the p-values of discriminative power for the channel
+        at each timepoint.
     label_name : str, optional
         Name of the label to test (default is 'syllable').
     recording_name : str, optional
@@ -241,10 +247,21 @@ def plot_discriminative_channel(
         Path to save the figure. If None, the figure
         will be plotted but not saved.
     """
+    _, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+    # First plot: Mean and SEM for each label
     series = data[recording_name]
-    labels = data[label_name].squeeze()
+    labels = data[label_name]
 
     unique_labels = np.unique(labels)
+
+    n_timepoints = series.shape[2]
+
+    if onset_time is not None:
+        timepoints = np.arange(n_timepoints) / sampling_rate - onset_time
+        timepoints = timepoints.astype(float)
+    else:
+        timepoints = np.arange(n_timepoints) / sampling_rate
 
     for label in unique_labels:
         label_data = series[labels == label, channel_idx, :]
@@ -252,26 +269,33 @@ def plot_discriminative_channel(
         std_data = np.std(label_data, axis=0)
         sem_data = std_data / np.sqrt(label_data.shape[0])
 
-        if onset_time is not None:
-            timepoints = np.arange(
-                mean_data.shape[0]) / sampling_rate - onset_time
-            timepoints = timepoints.astype(float)
-        else:
-            timepoints = np.arange(mean_data.shape[0]) / sampling_rate
-
-        plt.plot(timepoints, mean_data, label=f'{label_name} {label}')
-        plt.fill_between(
+        axes[0].plot(timepoints, mean_data, label=f'{label_name} {label}')
+        axes[0].fill_between(
             timepoints, mean_data - sem_data, mean_data + sem_data,
             alpha=0.2, label=f'{label_name} {label} ±1 SEM'
         )
-    if onset_time is not None:
-        plt.axvline(x=0, color='k', linestyle='--', label='Onset')
-    
-    plt.title(f'Channel {channel_idx} Discriminative Power')
-    plt.xlabel('Timepoints')
-    plt.ylabel('Amplitude')
-    plt.legend()
 
+    if onset_time is not None:
+        axes[0].axvline(x=0, color='k', linestyle='--', label='Onset')
+
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('Amplitude')
+    axes[0].legend()
+
+    # Second plot: P-values
+    axes[1].plot(timepoints, p_vals, label='P-values', color='r')
+    axes[1].axhline(y=p_threshold, color='k', linestyle='--',
+                    label='Significance Threshold')
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('p-value')
+    axes[1].legend()
+
+    # set super title 
+    plt.suptitle(
+        f'Discriminative Power for Channel {channel_idx} '
+        f'in distinguishing {label_name}', fontsize=18)
+
+    # Save or show the figure
     if figure_path:
         plt.savefig(figure_path, dpi=500)
         plt.close()

@@ -130,6 +130,9 @@ def find_significant_channels(
     ) -> list:
     """
     Find channels with significant discriminative power based on p-values.
+    A channel is considered significant if it has at least one timepoint
+    with a p-value below the threshold and the maximum length of
+    consecutive significant timepoints exceeds the specified threshold.
 
     Parameters
     ----------
@@ -138,6 +141,14 @@ def find_significant_channels(
         at each timepoint, as returned by `test_discriminative_power`.
     threshold : float, optional
         Significance threshold for p-values (default is 0.05).
+    consecutive_length_threshold : int, optional
+        Minimum length of consecutive significant timepoints
+        to consider a channel discriminative (default is 10).
+
+    Return
+    -------
+    list
+        List of indices of channels that are significantly discriminative.
     """
     p_values = f_test_results['p_value']
     significant_channels = []

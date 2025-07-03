@@ -77,6 +77,7 @@ if len(args.consecutive_length_thresholds) != len(args.label_names):
 data = np.load(args.recording_file_path)
 
 channel_data = {}
+p_vals = {}
 
 for i, label_name in enumerate(args.label_names):
     results = test_discriminative_power(
@@ -91,6 +92,7 @@ for i, label_name in enumerate(args.label_names):
         f'for label "{label_name}"')
     
     channel_data[f'{label_name}_discriminative'] = significant_channels
+    p_vals[label_name] = results['p_value'][significant_channels, :]
 
 
 if args.output_file:
@@ -127,13 +129,17 @@ if args.figure_dir:
 
     for i, significant_channels in enumerate(channel_data.values()):
         label_name = args.label_names[i]
-        for ch in significant_channels:
+
+        # limit the number of channels to plot
+        n_channels = min(20, len(significant_channels))
+        for j, ch in enumerate(significant_channels[:n_channels]):
             figure_name = '{}_channel_{}.png'.format(label_name, ch)
             figure_path = os.path.join(args.figure_dir, figure_name)
 
             plot_discriminative_channel(
                 data, ch,
                 sampling_rate=args.sampling_rate,
+                p_vals = p_vals[label_name][j, :].squeeze(),
                 label_name=label_name,
                 onset_time = args.onset_time,
                 recording_name='ecog', figure_path=figure_path
