@@ -3,7 +3,7 @@ audios
 figures
 logs
 notebooks
+configs
 *.sh
 _*.py
-*notes.md
 __pycache__

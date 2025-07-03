@@ -2,7 +2,11 @@
 Data file should have keys "ECoG_toneT{tone}" with shape
 (n_samples, n_channels, n_timepoints)
 where {tone} is the index for tone.
-Each sample corresponds to a trial in the experiment. 
+Each sample corresponds to a trial in the experiment.
+
+Required hyper-parameters from the JSON file:
+- syllable_labels: a list of syllable labels, used for visualising the classification results.
+  For example, ["ba", "da"] will map label 0 to "ba" and label 1 to "da".
 """
 
 import argparse
@@ -11,6 +15,7 @@ import torch
 from torch.utils.data import TensorDataset
 import os
 import numpy as np
+import json
 
 from models import syllableModel, toneModel
 from models.classifierTrainer import ClassifierTrainer
@@ -30,6 +35,15 @@ parser.add_argument(
 parser.add_argument(
     '--figure_dir', type=str, default='figures',
     help='Directory to save the figures.'
+)
+parser.add_argument(
+    '--channel_file', type=str, default='channel_selections.json',
+    help='JSON file containing channel selections for the model. '
+    'Must have "syllable_discriminative" and "tone_discriminative" keys.'
+)
+parser.add_argument(
+    '--config_file', required=True, type=str,
+    help='Path to the JSON file with necessary hyperparameters'
 )
 # ----- Experiment Settings -------
 parser.add_argument(
@@ -71,16 +85,13 @@ parser.add_argument(
     help='Learning rate for the optimizer. Default is 0.0005.')
 
 
-# TODO make these into a config file
-syllables_discriminative_channels = [
-    70, 71, 86, 180, 182, 195, 196, 197, 198, 211, 212, 227, 228]
-tone_discriminative_channels = [
-    9, 10, 105, 120, 121, 184, 200, 206]
-
-syllable_labels = ['mi', 'ma']
-
 if __name__ == '__main__':
     params = parser.parse_args()
+
+    with open(params.config_file, 'r') as f:
+        config = json.load(f)
+    
+    syllable_labels = config.get('syllable_labels')
 
     # check CUDA availability
     if 'cuda' in params.device and not torch.cuda.is_available():
@@ -99,13 +110,20 @@ if __name__ == '__main__':
 
     dataset = loadmat(params.sample_path)
 
-    # TODO add channel selector
     if params.target == 'tones':
+        with open(params.channel_file, 'r') as f:
+            channel_selections = json.load(f)
+        tone_discriminative_channels = channel_selections['tone_discriminative']
+
         all_erps, labels = dataset['ecog'], dataset['tone'].flatten()
         all_erps = all_erps[:, tone_discriminative_channels, :]
     elif params.target == 'syllables':
+        with open(params.channel_file, 'r') as f:
+            channel_selections = json.load(f)
+        syllable_discriminative_channels = channel_selections['syllable_discriminative']
+
         all_erps, labels = dataset['ecog'], dataset['syllable'].flatten()
-        all_erps = all_erps[:, syllables_discriminative_channels, :]
+        all_erps = all_erps[:, syllable_discriminative_channels, :]
     else:
         raise ValueError(
             f"Invalid target '{params.target}'. "

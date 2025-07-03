@@ -211,7 +211,7 @@ def plot_channel_mean_std(
 
 
 def plot_discriminative_channel(
-        mat_file_path: str, channel_idx: int,
+        data : dict, channel_idx: int,
         sampling_rate: int,
         label_name: str = 'syllable',
         recording_name: str = 'ecog',
@@ -223,8 +223,9 @@ def plot_discriminative_channel(
     
     Parameters
     ----------
-    mat_file_path : str
-        Path to the .mat file containing the recording and labels.
+    data : dict
+        Dictionary containing the recording data and labels.
+        Must have keys corresponding to the recording name and label name.
     channel_idx : int
         Index of the channel to plot.
     sampling_rate : int
@@ -240,7 +241,6 @@ def plot_discriminative_channel(
         Path to save the figure. If None, the figure
         will be plotted but not saved.
     """
-    data = loadmat(mat_file_path)
     series = data[recording_name]
     labels = data[label_name].squeeze()
 

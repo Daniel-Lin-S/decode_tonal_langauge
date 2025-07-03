@@ -5,6 +5,7 @@ from scipy.io.wavfile import write as write_wave
 import torch
 import numpy as np
 from torch.utils.data import TensorDataset
+import json
 
 from data_loading.dataloaders import split_dataset
 from data_loading.utils import prepare_tone_dynamics
@@ -30,7 +31,16 @@ parser.add_argument(
 )
 parser.add_argument(
     '--audio_dir', type=str, default='audios',
-    help='Directory to save the audio files.'
+    help='Directory to save the .wav audio files of '
+    'synthesised waveforms.'
+)
+parser.add_argument(
+    '--channel_file', type=str, default='channel_selections.json',
+    help='JSON file containing channel selections for the model. '
+)
+parser.add_argument(
+    '--config_file', type=str, default='config.json',
+    help='Path to the JSON file with necessary hyperparameters.'
 )
 # ----- Audio Settings -------
 parser.add_argument(
@@ -72,27 +82,6 @@ parser.add_argument(
     help='Learning rate for the optimizer. Default is 0.0005.')
 
 
-# TODO make these into a config file
-non_discriminative_channels = [
-    9,10,67,11,68,72,79,83,86,87,88,91,92,93,94,102,103,104,108,
-    109,120,121,123,124,167,168,176,181,182,183,184,197,198,199,
-    200,201,202,206,213,214,215,216,221,230,231,240
-]
-
-tone_dynamic_mapping = {
-    1 : [4, 4, 4, 4, 4],
-    2 : [2, 2.5, 3, 3.5, 4],
-    3 : [2, 1.5, 1, 1.5, 2],
-    4 : [5, 4, 3, 2, 1]
-}
-
-mel_kwargs = {
-    'n_mels': 80,
-    'n_fft': 2270,
-    'hop_length': 567,
-}
-
-
 if __name__ == '__main__':
     params = parser.parse_args()
 
@@ -110,11 +99,35 @@ if __name__ == '__main__':
         raise RuntimeError(
             "CUDA is not available. Please use 'cpu' as device.")
 
+    # find non-discriminative channels
+    with open(params.channel_file, 'r') as f:
+        channel_selections = json.load(f)
+
+    non_discriminative_channels = set(channel_selections['active_channels'])
+    discriminative_channels = set()
+    for label in ['tone_discriminative', 'syllable_discriminative']:
+        discriminative_channels.update(channel_selections[label])
+
+    non_discriminative_channels = list(
+        non_discriminative_channels - discriminative_channels
+    ).sort()
+
+    # load configuration files
+    with open(params.config_file, 'r') as f:
+        config = json.load(f)
+    
+    mel_kwargs = config['mel_kwargs']
+    tone_dynamic_mapping = config['tone_dynamic_mapping']
+
+    # load dataset, compute Mel spectrograms
     dataset = loadmat(params.sample_path)
 
-    ecog_samples = dataset['ecog']
+    ecog_samples = dataset['ecog'].squeeze()
     ecog_samples = ecog_samples[:, non_discriminative_channels, :]
     audios = dataset['audio']
+
+    print('Shape of ECoG samples:', ecog_samples.shape)
+    print('Shape of audio samples:', audios.shape)
 
     mels = []
     for i, audio in enumerate(audios):
@@ -124,7 +137,7 @@ if __name__ == '__main__':
         
         mels.append(mel)
     
-    mels = np.array(mels)  # shape (n_samples, n_mels * n_timepoints)
+    mels = np.array(mels)  # (n_samples, n_mels * n_timepoints)
     
     print('Shape of Mel spectrogram:', mels.shape[1:])
     

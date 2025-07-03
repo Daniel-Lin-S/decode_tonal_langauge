@@ -30,7 +30,7 @@ def extract_block_id(filename: str) -> int:
 
 
 def prepare_tone_dynamics(
-        tone_dynamic_mapping: Dict[int, List[int]],
+        tone_dynamic_mapping: Dict[str, List[int]],
         tone_labels: np.ndarray, syllable_labels: np.ndarray
     ) -> np.ndarray:
     """
@@ -39,11 +39,13 @@ def prepare_tone_dynamics(
 
     Parameters
     ----------
-    tone_dynamic_mapping: Dict[int, List[int]]
+    tone_dynamic_mapping: Dict[str, List[int]]
         Dictionary mapping tone IDs to sequences of tone dynamics.
         Each value must have the same length.
     tone_labels: np.ndarray
         Array of tone labels corresponding to the samples.
+        Each label should be an integer, and
+        should match the keys in tone_dynamic_mapping.
     syllable_labels: np.ndarray
         Array of syllable labels corresponding to the samples.
 
@@ -61,7 +63,7 @@ def prepare_tone_dynamics(
     dynamics = []
 
     for tone, syllable in zip(tone_labels, syllable_labels):
-        tone_dynamic = tone_dynamic_mapping[tone]
+        tone_dynamic = tone_dynamic_mapping[str(tone)]
         syllable_dynamic = [syllable] * len(tone_dynamic)
         dynamic = np.array([syllable_dynamic, tone_dynamic])
         dynamics.append(dynamic)

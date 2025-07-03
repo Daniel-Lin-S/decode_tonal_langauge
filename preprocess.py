@@ -5,6 +5,15 @@ Preprocessing pipeline:
 1. Downsample the ECoG data to a target frequency. (e.g. 400Hz)
 2. Apply Hilbert filter to extract high gamma activity.
 3. Normalise the ECoG data using either z-score or rereferencing.
+
+Required hyper-parameters from the JSON file:
+- freq_ranges: a list of lists, each list should have length 2 indicating the
+  lower and higher bounds of the frequency band.
+  All frequency bands will be extracted by a Hilbert filter.
+  default value: [[70, 150]] (high gamma frequency range)
+- freq_band: str, a marker for the freq_ranges, will be used to identify the .mat
+  files extracted.
+  default value: 'hga'
 """
 
 
@@ -15,17 +24,15 @@ from data_loading.preprocessing import (
     hilbert_filter, downsample,
     zscore, rereference
 )
-from scipy.io import savemat
+import json
+import numpy as np
 
 
 parser = argparse.ArgumentParser(
     description="Extract ECoG signal from TDT blocks, preprocess, and save to .mat files."
 )
 
-parser.add_argument(
-    '--subject_id', required=True, type=int,
-    help='Subject ID for which to process the data.'
-)
+# ------- I/O ---------
 parser.add_argument(
     '--tdt_dir', default='raw/ecog', type=str,
     help='Directory containing TDT blocks. '
@@ -37,6 +44,15 @@ parser.add_argument(
     '--output_dir', default='processed/mat', type=str,
     help='Directory to save the processed ECoG data in .mat format.'
 )
+parser.add_argument(
+    '--subject_id', required=True, type=int,
+    help='Subject ID, used to name the output files.'
+)
+parser.add_argument(
+    '--config_file', required=True, type=str,
+    help='Path to the JSON file with necessary hyperparameters'
+)
+# ------- Preprocess Settings ---------
 parser.add_argument(
     '--downsample_freq', default=400, type=int,
     help='Target sampling frequency of ECoG data after downsampling.'
@@ -54,11 +70,13 @@ parser.add_argument(
 )
 
 
-# TODO turn this into config file
-freq_ranges = (70, 150)  # High gamma frequency range
-freq_band = 'hga'
-
 args = parser.parse_args()
+
+with open(args.config_file, 'r') as f:
+    config = json.load(f)
+
+freq_ranges = config.get('freq_ranges', [[70, 150]])
+freq_band = config.get('freq_band', 'hga')
 
 if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
@@ -76,11 +94,11 @@ for dir in os.listdir(args.tdt_dir):
 
     ecog_file = os.path.join(
         args.output_dir,
-        f'HS{args.subject_id}_B{block_id}_ecog_{freq_band}_{args.downsample_freq}Hz.mat'
+        f'HS{args.subject_id}_B{block_id}_ecog_{freq_band}_{args.downsample_freq}Hz.npz'
     )
 
     audio_file = os.path.join(
-        args.output_dir, f'HS{args.subject_id}_B{block_id}_sound.mat'
+        args.output_dir, f'HS{args.subject_id}_B{block_id}_sound.npz'
     )
 
     if os.path.exists(ecog_file) and os.path.exists(audio_file):
@@ -119,19 +137,13 @@ for dir in os.listdir(args.tdt_dir):
         raise ValueError("Invalid normalisation method specified.")
 
     if not os.path.exists(ecog_file):
-        savemat(ecog_file, {
-            'data': ecog_normalised,
-            'sf': args.downsample_freq,
-        })
+        np.savez(ecog_file, data=ecog_normalised, sf=args.downsample_freq)
         print('Saved ECoG data to:', ecog_file)
     else:
         print('ECoG data already exists:', ecog_file)
 
     if not os.path.exists(audio_file):
-        savemat(audio_file, {
-            'data': audio,
-            'sf': int(audio_freq),
-        })
+        np.savez(audio_file, data=audio, sf=int(audio_freq))
         print('Saved audio data to:', audio_file)
     else:
         print('Audio data already exists:', audio_file)
