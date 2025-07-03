@@ -10,7 +10,6 @@ Required hyper-parameters from the JSON file:
 """
 
 import argparse
-from scipy.io import loadmat
 import torch
 from torch.utils.data import TensorDataset
 import os
@@ -31,7 +30,7 @@ parser = argparse.ArgumentParser(
 # ----- I/O -------
 parser.add_argument(
     '--sample_path', type=str, required=True,
-    help='The mat file containing the ECoG samples. ')
+    help='The npz file containing the ECoG samples. ')
 parser.add_argument(
     '--figure_dir', type=str, default='figures',
     help='Directory to save the figures.'
@@ -108,7 +107,7 @@ if __name__ == '__main__':
         raise FileNotFoundError(
             f"Data file '{params.sample_path}' does not exist.")
 
-    dataset = loadmat(params.sample_path)
+    dataset = np.load(params.sample_path)
 
     if params.target == 'tones':
         with open(params.channel_file, 'r') as f:

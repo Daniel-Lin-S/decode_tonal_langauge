@@ -1,6 +1,6 @@
 import os
 import argparse
-from scipy.io import loadmat
+import numpy as np
 import json
 
 from data_loading.channel_selection import (
@@ -16,8 +16,8 @@ parser = argparse.ArgumentParser(
 
 
 parser.add_argument(
-    '--mat_file_path', required=True, type=str,
-    help='Path to the .mat file containing ECoG data.'
+    '--recording_file_path', required=True, type=str,
+    help='Path to the .npz file containing ECoG data.'
 )
 parser.add_argument(
     '--figure_dir', required=False, type=str,
@@ -32,13 +32,13 @@ parser.add_argument(
 parser.add_argument(
     '--label_names', type=str,
     nargs='+', default=['syllable', 'tone'],
-    help='List of label names (columns in the mat file)'
+    help='List of label names (columns in the npz file)'
     ' to use for the analysis.'
 )
 parser.add_argument(
     '--recording_name', default='ecog', type=str,
     help='Name of the recording to analyse.'
-    'This should match the name used in the .mat file.'
+    'This should match the name used in the .npz file.'
 )
 parser.add_argument(
     '--p_thresholds', default=[0.01, 0.001], type=float,
@@ -74,7 +74,7 @@ if len(args.consecutive_length_thresholds) != len(args.label_names):
         'match the number of label names.'
     )
 
-data = loadmat(args.mat_file_path)
+data = np.load(args.recording_file_path)
 
 channel_data = {}
 

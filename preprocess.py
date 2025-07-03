@@ -1,5 +1,5 @@
 """
-Extract ECoG signal from TDT blocks, preprocess, and save to .mat files.
+Extract ECoG signal from TDT blocks, preprocess, and save to .npz files.
 
 Preprocessing pipeline:
 1. Downsample the ECoG data to a target frequency. (e.g. 400Hz)
@@ -11,7 +11,7 @@ Required hyper-parameters from the JSON file:
   lower and higher bounds of the frequency band.
   All frequency bands will be extracted by a Hilbert filter.
   default value: [[70, 150]] (high gamma frequency range)
-- freq_band: str, a marker for the freq_ranges, will be used to identify the .mat
+- freq_band: str, a marker for the freq_ranges, will be used to identify the .npz
   files extracted.
   default value: 'hga'
 """
@@ -29,7 +29,7 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(
-    description="Extract ECoG signal from TDT blocks, preprocess, and save to .mat files."
+    description="Extract ECoG signal from TDT blocks, preprocess, and save to .npz files."
 )
 
 # ------- I/O ---------
@@ -41,8 +41,8 @@ parser.add_argument(
     'The data should have streams EOG1 and ANIN for ECoG and audio respectively.'
 )
 parser.add_argument(
-    '--output_dir', default='processed/mat', type=str,
-    help='Directory to save the processed ECoG data in .mat format.'
+    '--output_dir', default='processed/npz', type=str,
+    help='Directory to save the processed ECoG data in .npz format.'
 )
 parser.add_argument(
     '--subject_id', required=True, type=int,

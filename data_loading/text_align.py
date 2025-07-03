@@ -3,7 +3,6 @@ import numpy as np
 from textgrid import TextGrid
 import os
 from typing import List, Optional, Dict, Tuple
-from scipy.io import loadmat, savemat
 
 import warnings
 
@@ -188,13 +187,15 @@ def get_textgrid_time(
 
 
 def _audio_condition(
-        file: str, audio_kwords: Optional[List[str]]=None
+        file: str,
+        file_format: str,
+        audio_kwords: Optional[List[str]]=None,
     ) -> bool:
     """
     Check if the file is an audio recording and
     satisfies the filtering conditions.
     """
-    condition = 'sound' in file and file.endswith('.mat')
+    condition = 'sound' in file and file.endswith(f'.{file_format}')
 
     if audio_kwords is not None:
         for kw in audio_kwords:
@@ -203,13 +204,14 @@ def _audio_condition(
     return condition
 
 def _ecog_condition(
-        file: str, ecog_kwords: Optional[List[str]]=None
+        file: str, file_format: str,
+        ecog_kwords: Optional[List[str]]=None,
     ) -> bool:
     """
     Check if the file is an ECoG recording and
     satisfies the filtering conditions.
     """
-    condition = 'ecog' in file and file.endswith('.mat')
+    condition = 'ecog' in file and file.endswith(f'.{file_format}')
 
     if ecog_kwords is not None:
         for kw in ecog_kwords:
@@ -225,7 +227,8 @@ def extract_ecog_audio(
         audio_kwords: Optional[List[str]]=None,
         length: float = 1.0,
         output_path: Optional[str]=None,
-        rest_period: Optional[Tuple[float]] = None
+        rest_period: Optional[Tuple[float]] = None,
+        recording_format: str = 'npz'
     ) -> Dict[str, np.ndarray]:
     """
     Extracts ECoG and audio samples based on the intervals
@@ -238,11 +241,11 @@ def extract_ecog_audio(
         values are DataFrames containing the intervals.
         Should be output of `handle_textgrids`.
     recording_dir : str
-        Directory containing ECoG and audio files (in mat forms).
+        Directory containing ECoG and audio files. (.npz forms)
         Should have ECoG files with "3052Hz" in the name and
         audio files with "sound" in the name.
-        Each file must start with "B[block_number]".
-        Required mat keys: `data` for the recording,
+        The name of each file must start with "B[block_number]".
+        Required keys: `data` for the recording,
         `sf` for sampling frequency.
     syllables : List[str]
         List of syllables to map to the intervals.
@@ -261,7 +264,7 @@ def extract_ecog_audio(
         Length of the samples to extract, in seconds.
         Defaults to 1.0.
     output_path : str, optional
-        Path to save the extracted samples (in mat format).
+        Path to save the extracted samples (in .npz forms)
     rest_period : Tuple[float], optional
         Tuple of (start, end) in seconds for the rest period.
         Extracted for reference. 
@@ -288,7 +291,7 @@ def extract_ecog_audio(
     print('Syllable mapping used: ', dict(enumerate(syllables)))
 
     for file in os.listdir(recording_dir):
-        if _ecog_condition(file, ecog_kwords):   # ECoG Recording
+        if _ecog_condition(file, recording_format, ecog_kwords):   # ECoG Recording
             block = extract_block_id(file)
             if block not in intervals:
                 continue
@@ -300,22 +303,22 @@ def extract_ecog_audio(
                 )
                 continue
 
-            mat_file_path = os.path.join(recording_dir, file)
+            file_path = os.path.join(recording_dir, file)
 
-            dataaset = loadmat(mat_file_path)
+            dataaset = np.load(file_path)
             try:
                 ecog_data = dataaset['data']
             except KeyError:
                 raise KeyError(
-                    f"Expected key 'data' not found in the mat file {file}. "
+                    f"Expected key 'data' not found in the npz file {file}. "
                     "Ensure the ECoG data is correctly stored."
                     f"Existing keys {list(dataaset.keys())}."
                 )
             try:
-                ecog_sampling_rate = dataaset['sf'][0][0]
+                ecog_sampling_rate = dataaset['sf']
             except:
                 raise KeyError(
-                    f"Expected key 'sf' not found in the mat file {file}. "
+                    f"Expected key 'sf' not found in the npz file {file}. "
                     "Ensure the sampling frequency is correctly stored."
                     f"Existing keys {list(dataaset.keys())}."
                 )
@@ -379,7 +382,7 @@ def extract_ecog_audio(
                 ecog_rest_samples[block] = np.array(
                     ecog_rest_samples[block])
         
-        elif _audio_condition(file, audio_kwords):  # Audio Recording
+        elif _audio_condition(file, recording_format, audio_kwords):  # Audio Recording
             block = extract_block_id(file)
             if block not in intervals:
                 continue
@@ -391,22 +394,22 @@ def extract_ecog_audio(
                 )
                 continue
 
-            mat_file_path = os.path.join(recording_dir, file)
+            file_path = os.path.join(recording_dir, file)
 
-            dataset = loadmat(mat_file_path)
+            dataset = np.load(file_path)
             try:
                 audio_data = dataset['data']
             except KeyError:
                 raise KeyError(
-                    f"Expected key 'data' not found in the mat file {file}. "
+                    f"Expected key 'data' not found in the npz file {file}. "
                     "Ensure the audio data is correctly stored."
                     f"Existing keys {list(dataset.keys())}."
                 )
             try:
-                audio_sampling_rate = dataset['sf'][0][0]
+                audio_sampling_rate = dataset['sf']
             except KeyError:
                 raise KeyError(
-                    f"Expected key 'sf' not found in the mat file {file}. "
+                    f"Expected key 'sf' not found in the npz file {file}. "
                     "Ensure the sampling frequency is correctly stored."
                     f"Existing keys {list(dataset.keys())}."
                 )
@@ -478,7 +481,7 @@ def extract_ecog_audio(
     print('Syllable labels shape:', all_syllable_labels.shape)
     print('Tone labels shape:', all_tone_labels.shape)
 
-    # save as mat file
+    # save as npz file
     output_data = {
         'ecog': all_erp_samples,
         'audio': all_audio_samples,
@@ -490,7 +493,7 @@ def extract_ecog_audio(
         output_data['ecog_rest'] = all_ecog_samples_rest
 
     if output_path is not None:
-        savemat(output_path, output_data)
+        np.savez(output_path, **output_data)
         print(f"ECoG and audio samples saved to {output_path}")
 
     return output_data

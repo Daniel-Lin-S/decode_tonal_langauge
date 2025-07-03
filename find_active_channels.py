@@ -4,7 +4,6 @@ Find the channels with responses at events compared to rest period.
 import argparse
 import matplotlib.pyplot as plt
 import os
-from scipy.io import loadmat
 import numpy as np
 import json
 
@@ -17,8 +16,8 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument(
-    '--mat_file_path', required=True, type=str,
-    help='Path to the .mat file containing ECoG data.'
+    '--recording_file_path', required=True, type=str,
+    help='Path to the .npz file containing ECoG data.'
 )
 parser.add_argument(
     '--figure_dir', required=False, type=str,
@@ -36,7 +35,7 @@ parser.add_argument(
 parser.add_argument(
     '--erp_recording_name', default='ecog', type=str,
     help='Name of the recording to analyse.'
-    'This should match the name used in the .mat file.'
+    'This should match the name used in the .npz file.'
 )
 parser.add_argument(
     '--p_threshold', default=0.001, type=float,
@@ -55,7 +54,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-data = loadmat(args.mat_file_path)
+data = np.load(args.recording_file_path)
 
 channels, lengths = find_active_channels(
     data, args.rest_recording_name,

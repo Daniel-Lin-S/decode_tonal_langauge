@@ -1,6 +1,5 @@
 import argparse
 import os
-from scipy.io import loadmat
 from scipy.io.wavfile import write as write_wave
 import torch
 import numpy as np
@@ -22,7 +21,7 @@ parser = argparse.ArgumentParser(
 # ----- I/O -------
 parser.add_argument(
     '--sample_path', type=str, required=True,
-    help='Path to the .mat file containing ECoG and audio samples.'
+    help='Path to the .npz file containing ECoG and audio samples.'
     ' The file should contain "ecog" and "audio" keys.'
 )
 parser.add_argument(
@@ -120,7 +119,7 @@ if __name__ == '__main__':
     tone_dynamic_mapping = config['tone_dynamic_mapping']
 
     # load dataset, compute Mel spectrograms
-    dataset = loadmat(params.sample_path)
+    dataset = np.load(params.sample_path)
 
     ecog_samples = dataset['ecog'].squeeze()
     ecog_samples = ecog_samples[:, non_discriminative_channels, :]

@@ -13,7 +13,7 @@ Required hyper-parameters from the JSON file:
 - syllable_identifiers: a list of syllable identifiers to be used for extracting
   syllables in the TextGrid files.
 
-File structure of each saved mat file:
+File structure of each saved npz file:
 - 'ecog': The ECoG data within each interval (event), a numpy array of shape 
     (n_samples, n_channels, n_timepoints).
     where n_samples stands for the number of intervals.
@@ -41,7 +41,7 @@ parser.add_argument(
     'a block number at the end, i.e. "_B[block_number].TextGrid".'
 )
 parser.add_argument(
-    '--recording_dir', default='processed/mat', type=str,
+    '--recording_dir', default='processed/npz', type=str,
     help='Directory containing ECoG and audio files (for all blocks).'
     'Should have ECoG files with "ecog" in the name and '
     'audio files with "sound" in the name.'
@@ -64,18 +64,13 @@ parser.add_argument(
     'Defaults to None.'
 )
 parser.add_argument(
-    '--output_path', default='data/samples/samples.mat', type=str,
-    help='Path to save the output .mat file containing the extracted samples.'
+    '--output_path', default='data/samples/samples.npz', type=str,
+    help='Path to save the output .npz file containing the extracted samples.'
 )
 parser.add_argument(
     '--blocks', nargs='+', type=int, default=None,
     help='List of block numbers to process. If None, all blocks will be processed.'
 )
-
-
-# TODO move this into a config file
-syllables = ['i', 'a']  # syllable marks in the TextGrid files.
-rest_period = (0.0, 25.0)  # Default rest period for ECoG extraction.
 
 
 args = parser.parse_args()
@@ -124,7 +119,7 @@ if __name__ == '__main__':
 
     extract_ecog_audio(
         intervals, args.recording_dir,
-        syllables,
+        syllable_identifiers,
         audio_kwords=args.audio_kwords,
         ecog_kwords=args.ecog_kwords,
         output_path=args.output_path,

@@ -1,20 +1,21 @@
 import numpy as np
 from scipy.stats import f_oneway
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Mapping
 
 
 def test_discriminative_power(
-        data: dict, label_name: str,
-        recording_name: str='ecog'
-    ) -> Dict[str, np.ndarray]:
+    data: Mapping[str, np.ndarray],
+    label_name: str,
+    recording_name: str='ecog'
+) -> Dict[str, np.ndarray]:
     """
     Test the discriminative power of each recording channel on a given label
     using one-way ANOVA.
 
     Parameters
     ----------
-    data : dict
-        Dictionary containing the recordings and labels.
+    data : Mapping[str, np.ndarray]
+        Any dictionary-like structure containing the recordings and labels.
         The recording must have shape (n_samples, n_channels, n_timepoints).
         And the labels must have shape (n_samples, 1) or (1, n_samples)
         with values being integers (e.g., categorical labels).
@@ -153,7 +154,7 @@ def find_significant_channels(
 
 
 def find_active_channels(
-    data: dict,
+    data: Mapping[str, np.ndarray],
     rest_recording_name: str = 'ecog_rest',
     erp_recording_name: str = 'ecog',
     p_val_threshold: float = 0.05,
@@ -165,9 +166,9 @@ def find_active_channels(
 
     Parameters
     ----------
-    data : dict
-        Dictionary that contains the recordings during
-        the rest period and the ERP recording,
+    data : Mapping[str, np.ndarray]
+        Any dictionary-like structure that contains
+        the recordings during the rest period and the ERP recording,
         both should be numpy arrays with shape
         (n_samples, n_channels, n_timepoints).
         Number of samples can be different for each recording,
