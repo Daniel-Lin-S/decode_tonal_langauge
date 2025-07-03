@@ -469,6 +469,10 @@ def extract_ecog_audio(
     all_syllable_labels = np.concatenate(all_syllable_labels, axis=0)
     all_tone_labels = np.concatenate(all_tone_labels, axis=0)
 
+    min_label = np.min(all_tone_labels)
+    if min_label > 0:
+        all_tone_labels -= min_label  # make syllable labels start from 0
+
     if rest_period is not None:
         all_ecog_samples_rest = []
         for block in block_ids:
@@ -485,8 +489,8 @@ def extract_ecog_audio(
     output_data = {
         'ecog': all_erp_samples,
         'audio': all_audio_samples,
-        'syllable': all_syllable_labels.flatten(),
-        'tone': all_tone_labels.flatten()
+        'syllable': all_syllable_labels,
+        'tone': all_tone_labels
     }
 
     if rest_period is not None:

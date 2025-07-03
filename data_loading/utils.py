@@ -63,7 +63,13 @@ def prepare_tone_dynamics(
     dynamics = []
 
     for tone, syllable in zip(tone_labels, syllable_labels):
-        tone_dynamic = tone_dynamic_mapping[str(tone)]
+        try:
+            tone_dynamic = tone_dynamic_mapping[str(tone)]
+        except KeyError:
+            raise ValueError(
+                f"Tone {str(tone)} not found in tone_dynamic_mapping."
+                "Available tones in mapping: "
+                f"{list(tone_dynamic_mapping.keys())}")
         syllable_dynamic = [syllable] * len(tone_dynamic)
         dynamic = np.array([syllable_dynamic, tone_dynamic])
         dynamics.append(dynamic)
