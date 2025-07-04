@@ -56,7 +56,7 @@ args = parser.parse_args()
 
 data = np.load(args.recording_file_path)
 
-channels, lengths = find_active_channels(
+channels, lengths, p_vals = find_active_channels(
     data, args.rest_recording_name,
     args.erp_recording_name, args.p_threshold,
     args.consecutive_length_threshold
@@ -111,7 +111,7 @@ if args.figure_dir:
 
     # plot 10 example channels
     n_channels_plot = min(10, len(channels))
-    for ch in channels[:n_channels_plot]:
+    for i, ch in enumerate(channels[:n_channels_plot]):
         fig_name = f'channel_{ch}_erp_rest.png'
         figure_path = os.path.join(args.figure_dir, fig_name)
 
@@ -119,6 +119,8 @@ if args.figure_dir:
             data, args.rest_recording_name,
             args.erp_recording_name,
             ch,
+            p_vals=p_vals[i],
+            p_val_threshold=args.p_threshold,
             sampling_rate = args.sampling_rate,
             figure_path=figure_path
         )

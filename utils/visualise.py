@@ -307,6 +307,8 @@ def plot_rest_erp(
         data: dict, rest_recording_name: str,
         erp_recording_name: str, 
         channel_idx: int,
+        p_vals: list,
+        p_val_threshold: float=0.05,
         sampling_rate: int=400,
         figure_path: Optional[str]=None
     ) -> None:
@@ -324,6 +326,10 @@ def plot_rest_erp(
         Name of the ERP recording column (e.g., 'ecog').
     channel_idx : int
         Index of the channel to compare.
+    p_vals : list
+        List of p-values for the channel over time.
+    p_val_threshold : float, default=0.05
+        The threshold used when determining the significance of each channel.
     sampling_rate : int
         Sampling rate of the data (default: 400 Hz).
     figure_path : Optional[str], default=None
@@ -352,23 +358,36 @@ def plot_rest_erp(
 
     time = np.linspace(0, n_timepoints / sampling_rate, n_timepoints)
 
-    # Plot
-    plt.figure(figsize=(12, 6))
-    plt.plot(time, rest_mean, label=f'{rest_recording_name} (Rest)', color='blue')
-    plt.fill_between(
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Plot Rest and ERP activity
+    axes[0].plot(time, rest_mean, label=f'{rest_recording_name} (Rest)', color='blue')
+    axes[0].fill_between(
         time, rest_mean - rest_sem, rest_mean + rest_sem, color='blue', alpha=0.2)
 
-    plt.plot(time, erp_mean, label=f'{erp_recording_name} (ERP)', color='orange')
-    plt.fill_between(
+    axes[0].plot(time, erp_mean, label=f'{erp_recording_name} (ERP)', color='orange')
+    axes[0].fill_between(
         time, erp_mean - erp_sem, erp_mean + erp_sem, color='orange', alpha=0.2)
 
-    plt.title(f'Comparison of Rest and ERP Activity for Channel {channel_idx}',
-              fontsize=18)
-    plt.xlabel('Time (s)', fontsize=16)
-    plt.ylabel('Amplitude', fontsize=16)
-    plt.legend()
-    plt.grid(True)
-    
+    axes[0].set_title(f'Comparison of Rest and ERP Activity for Channel {channel_idx}',
+                      fontsize=16)
+    axes[0].set_xlabel('Time (s)', fontsize=14)
+    axes[0].set_ylabel('Amplitude', fontsize=14)
+    axes[0].legend()
+    axes[0].grid(True)
+
+    # Plot p-values
+    axes[1].plot(time, p_vals, label='P-values', color='red')
+    axes[1].axhline(
+        y=p_val_threshold, color='black', linestyle='--',
+        label='Significance Threshold')
+    axes[1].set_title('P-values Over Time', fontsize=16)
+    axes[1].set_xlabel('Time (s)', fontsize=14)
+    axes[1].set_ylabel('P-value', fontsize=14)
+    axes[1].legend()
+    axes[1].grid(True)
+
+    # Save or show the figure
     if figure_path:
         plt.savefig(figure_path, dpi=400, bbox_inches='tight')
         plt.close()

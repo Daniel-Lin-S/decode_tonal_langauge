@@ -4,6 +4,14 @@ Decode a tonal language from brain signals.
 This is an unofficial implementation of the paper Yan Liu et al. ,Decoding and synthesizing tonal language speech from brain activity.Sci. Adv.9,eadh0478(2023).DOI:10.1126/sciadv.adh0478
 https://www.science.org/doi/full/10.1126/sciadv.adh0478 
 
+Features:
+- Involves modules for pre-processing ECoG signals
+- Involes modules for aligning signals with event onsets to obtain the Event-related Potentials (ERPs)
+- Involves modules for selection of channels based on their activity and discriminative power on a categorical label (e.g. tone in this case)
+These modules can be applied to other tasks.
+- Extendable classifier, speech synthesizer frameworks with corresponding trainers to define your own model architectures.
+- A small toolbox for visualisation.
+
 ## Environment Setup
 
 It is recommended to use a virtual environment to manage dependencies. Run the following command in your terminal / shell to create a virtual environment:
@@ -29,6 +37,57 @@ Pipeline of work:
 4. `find_discriminative_channels.py`: By tuning the p-value threshold and length threshold, selects the appropriate channels that have significantly different response to different syllables and tones. (one-way ANOVA test used)
 
 The actual functions for performing these steps are stored in `data_loading`.
+
+Example Usage:
+```shell
+for SUBJECT_ID in 1 2 3 4 5; do
+    python3 preprocess.py \
+        --subject_id $SUBJECT_ID \
+        --tdt_dir data/${SUBJECT_ID}/raw \
+        --output_dir data/${SUBJECT_ID}/processed \
+        --config_file configs/general_configs.json \
+        --downsample_freq 400 \
+done
+
+for SUBJECT_ID in 1 2 3 4 5; do
+    python3 extract_samples.py \
+        --textgrid_dir data/${SUBJECT_ID}/annotation \
+        --recording_dir data/${SUBJECT_ID}/processed \
+        --config_file configs/general_configs.json \
+        --ecog_kwords "400Hz" "hga" \
+        --output_path data/${SUBJECT_ID}/samples/samples_hga_400Hz.npz \
+        --blocks 1 2 3 4
+done
+```
+Detailed description of each argument can be found in the python files,
+which can be used for writing new preprocessing pipelines.
+
+## Configuration file
+Task-specific parameters can be stored in a JSON file, with its path given to the parameter `config_file`. The parameters required by each file is specified at the top of python scripts.
+
+Example JSON file:
+```JSON
+{
+    "freq_ranges": [[70, 150]],
+    "freq_band": "hga",
+    "syllable_labels": ["mi", "ma"],
+    "syllable_identifiers": ["i", "a"],
+    "rest_period": [0.0, 10.0],
+    "mel_kwargs": {
+        "n_mels": 80,
+        "n_fft": 2270,
+        "hop_length": 567
+    },
+    "tone_dynamic_mapping": {
+        "0" : [4, 4, 4, 4, 4],
+        "1" : [2, 2.5, 3, 3.5, 4],
+        "2" : [2, 1.5, 1, 1.5, 2],
+        "3" : [5, 4, 3, 2, 1]
+    },
+    "n_tones": 4,
+    "n_syllables": 2
+}
+```
 
 ## Model Training
 The main scripts for model training are provided in `train_classifier.py` and `train_synthesizer.py`.

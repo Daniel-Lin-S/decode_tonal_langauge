@@ -70,6 +70,7 @@ parser.add_argument(
 parser.add_argument(
     '--blocks', nargs='+', type=int, default=None,
     help='List of block numbers to process. If None, all blocks will be processed.'
+    'This is useful when there are trial blocks irrelevant to the current experiments. '
 )
 
 

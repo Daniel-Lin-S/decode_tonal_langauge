@@ -1,18 +1,19 @@
 import math
 import numpy as np
 from scipy.fft import fft, ifft
-from typing import Tuple, Optional, List
+from typing import Tuple, List
 from scipy import signal
 
 
 def hilbert_filter(
     data: np.ndarray,
     sampling_rate: int,
+    freq_ranges: List[Tuple[float, float]],
     f0: float = 0.018,
     octspace: float = 1/7,
     filterbank_bias: float = math.log10(0.39),
     filterbank_slope: float = 0.5,
-    freq_ranges: Optional[List[Tuple[float, float]]] = None
+    envelope: bool = True
 ) -> np.ndarray:
     """
     Apply a Gaussian Hilbert filter bank to multichannel data.
@@ -23,6 +24,10 @@ def hilbert_filter(
         Input shape (n_channels, n_timepoints)
     sampling_rate : int
         Data sampling rate (Hz)
+    freq_ranges : List[Tuple[float, float]]
+        List of frequency ranges to filter. \n
+        Each range is a tuple (min_freq, max_freq).
+        Can also give a single tuple for one band.
     f0 : float
         Base frequency
     octspace : float
@@ -31,19 +36,18 @@ def hilbert_filter(
         Filter bank bias (log scale)
     filterbank_slope : float
         Filter bank slope
-    freq_range : Optional[Tuple[float, float]]
-        Frequency range (Hz), e.g. (70, 150)
+    envelope : bool
+        If True, return the Hilbert-transformed envelope signals.
+        If False, return the real part of the Hilbert transform.
 
     Returns
     -------
-    np.ndarray
+    filtered_signal : np.ndarray
         Hilbert-transformed envelope signals,
         shape (n_channels, n_timepoints)
     """
     if isinstance(freq_ranges, tuple):
         freq_ranges = [freq_ranges]
-    elif freq_ranges is None:
-        freq_ranges = [(0, sampling_rate // 2)]
 
     C, T = data.shape
 
@@ -82,22 +86,24 @@ def hilbert_filter(
         hilbert_mult[0] = 1
         hilbert_mult[1:(T + 1)//2] = 2
 
-    # FFT of input data
     data_fft = fft(data, axis=1)
 
     # Filter bank application
-    filtered_env = np.zeros((C, T, n_banks))
+    filtered_signal = np.zeros((C, T, n_banks))
     for i, (f_c, s_f) in enumerate(zip(center_freqs, sigma_fs)):
         H = np.exp(-0.5 * ((freqs - f_c) / s_f) ** 2)
         H[0] = 0  # remove DC
 
         filter_kernel = H * hilbert_mult
         for ch in range(C):
-            signal_filtered = ifft(data_fft[ch] * filter_kernel)
-            filtered_env[ch, :, i] = np.abs(signal_filtered)
+            signal = ifft(data_fft[ch] * filter_kernel)
+            if envelope:
+                filtered_signal[ch, :, i] = np.abs(signal)
+            else:
+                filtered_signal[ch, :, i] = signal.real
 
     # Mean envelope over bands
-    return filtered_env.mean(axis=2)
+    return filtered_signal.mean(axis=2)
 
 
 def downsample(

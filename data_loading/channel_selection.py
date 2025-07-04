@@ -170,7 +170,7 @@ def find_active_channels(
     erp_recording_name: str = 'ecog',
     p_val_threshold: float = 0.05,
     length_threshold: int = 10
-) -> Tuple[List[int], List[int]]:
+) -> Tuple[List[int], List[int], List[list]]:
     """
     Find channels that are significantly active during the ERP recording
     by comparing it to the rest recording using one-way ANOVA.
@@ -202,6 +202,9 @@ def find_active_channels(
     max_lengths : List[int]
         List of maximum lengths of consecutive significant timepoints
         for each active channel.
+    p_vals_all : List[list]
+        List of p-values for each active channel at each timepoint.
+        Each element is an array of p-values for the corresponding channel.
     """
 
     try:
@@ -231,6 +234,7 @@ def find_active_channels(
     n_channels = rest_samples.shape[1]
     active_channels = []
     max_lengths = []
+    p_vals_all = []
 
     for ch in range(n_channels):
         rest_data = rest_samples[:, ch, :]
@@ -250,8 +254,9 @@ def find_active_channels(
         if max_len > length_threshold:
             active_channels.append(ch)
             max_lengths.append(max_len)
+            p_vals_all.append(p_vals)
     
-    return active_channels, max_lengths
+    return active_channels, max_lengths, p_vals_all
 
 
 def select_non_discriminative_channels(
