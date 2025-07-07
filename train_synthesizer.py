@@ -11,6 +11,7 @@ import os
 from scipy.io.wavfile import write as write_wave
 import torch
 import numpy as np
+import pandas as pd
 from torch.utils.data import TensorDataset
 import json
 
@@ -34,13 +35,24 @@ parser.add_argument(
     ' The file should contain "ecog" and "audio" keys.'
 )
 parser.add_argument(
-    '--figure_dir', type=str, default='figures',
-    help='Directory to save the figures.'
+    '--subject_id', type=str, required=True,
+    help='ID of the subject for which the model is trained.'
 )
 parser.add_argument(
-    '--audio_dir', type=str, default='audios',
+    '--result_file', type=str, required=True,
+    help='Path to the CSV file where results will be saved. '
+)
+parser.add_argument(
+    '--figure_dir', type=str, required=False,
+    default=None,
+    help='Directory to save the figures. If not provided, '
+    'figures will not be saved.'
+)
+parser.add_argument(
+    '--audio_dir', type=str, required=False,
+    default=None,
     help='Directory to save the .wav audio files of '
-    'synthesised waveforms.'
+    'synthesised waveforms. If not provided, audio files will not be saved.'
 )
 parser.add_argument(
     '--channel_file', type=str, default='channel_selections.json',
@@ -49,6 +61,10 @@ parser.add_argument(
 parser.add_argument(
     '--config_file', type=str, default='config.json',
     help='Path to the JSON file with necessary hyperparameters.'
+)
+parser.add_argument(
+    '--model_name', type=str, required=True,
+    help='Name of the model, will be used to identify the model in the csv file.'
 )
 parser.add_argument(
     '--syllable_model_path', type=str, default=None,
@@ -103,19 +119,25 @@ parser.add_argument(
 if __name__ == '__main__':
     params = parser.parse_args()
 
+    # ------- Value checks  -------
     if not os.path.exists(params.sample_path):
         raise FileNotFoundError(
             f"Data file '{params.sample_path}' does not exist.")
-    
-    if not os.path.exists(params.figure_dir):
-        os.makedirs(params.figure_dir)
-
-    if not os.path.exists(params.audio_dir):
-        os.makedirs(params.audio_dir)
 
     if 'cuda' in params.device and not torch.cuda.is_available():
         raise RuntimeError(
             "CUDA is not available. Please use 'cpu' as device.")
+
+    # -------- Create directories if they do not exist --------
+    if params.figure_dir and not os.path.exists(params.figure_dir):
+        os.makedirs(params.figure_dir)
+
+    if params.audio_dir and not os.path.exists(params.audio_dir):
+        os.makedirs(params.audio_dir)
+
+    result_dir = os.path.dirname(params.result_file)
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
 
     # find non-discriminative channels
     with open(params.channel_file, 'r') as f:
@@ -140,9 +162,7 @@ if __name__ == '__main__':
     dataset = np.load(params.sample_path)
 
     ecog_samples = dataset['ecog']
-    # non-discriminative active channels
     ecog_non = ecog_samples[:, non_discriminative_channels, :]
-    # extract the syllable discriminative channels
     ecog_syllables = ecog_samples[:, channel_selections['syllable_discriminative'], :]
     ecog_tones = ecog_samples[:, channel_selections['tone_discriminative'], :]
 
@@ -158,7 +178,7 @@ if __name__ == '__main__':
     
     mels = np.array(mels)  # (n_samples, n_mels * n_timepoints)
     
-    print('Shape of Mel spectrogram:', mels.shape[1:])
+    print('Number of Mel spectrogram coefficients', mels.shape[1:])
     
     mels_dim = mels.shape[1]  # number of Mel coefficients
 
@@ -206,8 +226,10 @@ if __name__ == '__main__':
     for i, seed in enumerate(seeds):
         set_seeds(seed)
 
-        train_loader, test_loader = split_dataset(
-            dataset, params.train_ratio, params.batch_size,
+        ratios = [params.train_ratio, 1 - params.train_ratio]
+        dataloaders = split_dataset(
+            dataset, ratios, shuffling=[True, False],
+            batch_size=params.batch_size,
             seed=seed
         )
 
@@ -232,9 +254,9 @@ if __name__ == '__main__':
             print(f"Training synthesizer with seed {seed}...")
 
         history = trainer.train(
-            train_loader, params.epochs, verbose=params.verbose > 1)
+            dataloaders[0], params.epochs, verbose=params.verbose > 1)
 
-        mcd, recon_mels, origin_mels = trainer.evaluate(test_loader)
+        mcd, recon_mels, origin_mels = trainer.evaluate(dataloaders[1])
 
         mcds.append(mcd)
 
@@ -249,49 +271,75 @@ if __name__ == '__main__':
     mean_mcd = np.mean(mcds)
     std_mcd = np.std(mcds)
 
+    results = {
+        'model_name': params.model_name,
+        'subject_id': params.subject_id,
+        'mel_kwargs': str(mel_kwargs),
+        'seeds' : str(seeds.tolist()),
+        'batch_size': params.batch_size,
+        'epochs': params.epochs,
+        'learning_rate': params.lr,
+        'mcd_mean' : mean_mcd,
+        'mcd_std' : std_mcd,
+        'all_mcds': str(mcds),
+    }
+
+    results_df = pd.DataFrame([results])
+
+    if os.path.exists(params.result_file):
+        results_df.to_csv(
+            params.result_file, mode='a', header=False, index=False)
+    else:
+        results_df.to_csv(
+            params.result_file, mode='w', header=True, index=False)
+    print('Saved results to ', params.result_file)
+
     print(f"-------- Training completed over {params.repeat} runs --------")
     print(
         f"MCD (Mel-Cepstral Distortion): {mean_mcd:.4f} dB ± {std_mcd:.4f} dB"
     )
 
-    loss_figure_path = os.path.join(params.figure_dir, 'training_losses.png')
-    plot_training_losses(losses, loss_figure_path)
-    print("Saved training losses figure to ", loss_figure_path)
+    if params.figure_dir:
+        loss_figure_path = os.path.join(params.figure_dir, 'training_losses.png')
+        plot_training_losses(losses, figure_path=loss_figure_path)
+        print("Saved training losses figure to ", loss_figure_path)
 
     n_samples = 10
 
     for i in range(n_samples):
-        origin_mel = origin_mels[i]
-        recon_mel = recon_mels[i]
+        if params.audio_dir:
+            origin_mel = origin_mels[i]
+            recon_mel = recon_mels[i]
 
-        origin_wave = mel_to_audio(origin_mel, mel_kwargs['n_mels'])
-        recon_wave = mel_to_audio(recon_mel, mel_kwargs['n_mels'])
+            origin_wave = mel_to_audio(origin_mel, mel_kwargs['n_mels'])
+            recon_wave = mel_to_audio(recon_mel, mel_kwargs['n_mels'])
 
-        audio_file_path = os.path.join(
-            params.audio_dir, f'origin_audio_{i}.wav'
-        )
-
-        recon_audio_file_path = os.path.join(
-            params.audio_dir, f'recon_audio_{i}.wav'
-        )
-
-        mel_fig_path = os.path.join(
-            params.figure_dir, f'mel_{i}.png'
-        )
-
-        write_wave(audio_file_path, params.audio_sampling_rate, origin_wave)
-        print("Saved original audio to ", audio_file_path)
-        write_wave(recon_audio_file_path, params.audio_sampling_rate, recon_wave)
-        print("Saved reconstructed audio to ", recon_audio_file_path)
-
-        origin_mel = origin_mel.reshape(mel_kwargs['n_mels'], -1)
-        recon_mel = recon_mel.reshape(mel_kwargs['n_mels'], -1)
-        
-        compare_mels(
-            origin_mel, recon_mel, audio_sampling_rate=params.audio_sampling_rate,
-            title1="Original Mel Spectrogram",
-            title2="Synthesized Mel Spectrogram",
-            file_path=mel_fig_path
+            audio_file_path = os.path.join(
+                params.audio_dir, f'origin_audio_{i}.wav'
             )
 
-        print("Saved original mel spectrograms to ", mel_fig_path)
+            recon_audio_file_path = os.path.join(
+                params.audio_dir, f'recon_audio_{i}.wav'
+            )
+
+            write_wave(audio_file_path, params.audio_sampling_rate, origin_wave)
+            print("Saved original audio to ", audio_file_path)
+            write_wave(recon_audio_file_path, params.audio_sampling_rate, recon_wave)
+            print("Saved reconstructed audio to ", recon_audio_file_path)
+
+        if params.figure_dir:
+            mel_fig_path = os.path.join(
+                params.figure_dir, f'mel_{i}.png'
+            )
+
+            origin_mel = origin_mel.reshape(mel_kwargs['n_mels'], -1)
+            recon_mel = recon_mel.reshape(mel_kwargs['n_mels'], -1)
+            
+            compare_mels(
+                origin_mel, recon_mel, audio_sampling_rate=params.audio_sampling_rate,
+                title1="Original Mel Spectrogram",
+                title2="Synthesized Mel Spectrogram",
+                file_path=mel_fig_path
+                )
+
+            print("Saved original mel spectrograms to ", mel_fig_path)

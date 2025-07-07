@@ -158,7 +158,6 @@ class SynthesisModelCNN(SynthesisModel):
         # Concatenate along channel dimension
         x = torch.cat((x, x2), dim=1)
 
-        
         # Further processing
         x = self.concat_conv_block(x)
         x = self.flatten(x)

@@ -150,6 +150,22 @@ class SynthesisTrainer:
         if not train_classifiers:
             self.tone_model.eval()
             self.syllable_model.eval()
+        elif verbose:
+            n_trainable_tone = sum(
+                p.numel() for p in self.tone_model.parameters()
+                if p.requires_grad
+            )
+            n_trainable_syllable = sum(
+                p.numel() for p in self.syllable_model.parameters()
+                if p.requires_grad
+            )
+
+            print(
+                "Number of trainable parameters in the tone model: "
+                f"{n_trainable_tone:,}")
+            print(
+                "Number of trainable parameters in the syllable model: "
+                f"{n_trainable_syllable:,}")
 
 
     def train(
