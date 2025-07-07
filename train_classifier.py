@@ -59,6 +59,10 @@ parser.add_argument(
     '--subject_id', type=int, required=True,
     help='Subject ID, used to name the output files.'
 )
+parser.add_argument(
+    '--model_name', type=str, required=True,
+    help='Name of the model to be trained. Will be used to name the output files.'
+)
 # ----- Experiment Settings -------
 parser.add_argument(
     '--target', type=str, required=True,
@@ -274,6 +278,7 @@ if __name__ == '__main__':
     )
 
     experiment_results = {
+        'model_name': params.model_name,
         'subject': params.subject_id,
         'target' : params.target,
         'seeds' : str(seeds),

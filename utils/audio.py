@@ -180,11 +180,11 @@ def compare_mels(
     
     plt.subplot(1, 2, 1)
     visualise_mel(mel1, audio_sampling_rate, mel_in_db, show=False)
-    plt.title(title1)
+    plt.title(title1, fontsize=18)
 
     plt.subplot(1, 2, 2)
     visualise_mel(mel2, audio_sampling_rate, mel_in_db, show=False)
-    plt.title(title2)
+    plt.title(title2, fontsize=18)
 
     if file_path:
         plt.savefig(file_path, dpi=400)

@@ -101,9 +101,9 @@ if args.figure_dir:
     plt.figure(figsize=(10, 6))
     lengths = np.array(lengths) / args.sampling_rate  # convert to seconds
     plt.hist(lengths, bins=30, alpha=0.7, color='blue')
-    plt.title('Distribution of Active Length of Significant Channels')
-    plt.xlabel('Active length (s)')
-    plt.ylabel('Frequency')
+    plt.title('Distribution of Active Length of Significant Channels', fontsize=18)
+    plt.xlabel('Active length (s)', fontsize=16)
+    plt.ylabel('Frequency', fontsize=16)
     plt.savefig(figure_path, dpi=400)
     plt.close()
     print('Saved distribution of lengths of significant channels to ',

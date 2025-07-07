@@ -58,9 +58,9 @@ def plot_training_losses(
             color = plt.cm.Greens(0.3 + (i / len(vali_losses)) * 0.7)  
             plt.plot(vali_curve, color=color, alpha=0.3, linestyle='--')
 
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.title('Loss Curve Across All Repetitions')
+    plt.xlabel('Epochs', fontsize=16)
+    plt.ylabel('Loss', fontsize=16)
+    plt.title('Loss Curve Across All Repetitions', fontsize=18)
     plt.legend()
 
     if figure_path:
@@ -154,8 +154,8 @@ def plot_psd(
         plt.plot(f[1:], Pxx[1:], color=cmap(i))
 
     plt.title('Power Spectrum Density (PSD)', fontsize=18)
-    plt.xlabel('Frequency (Hz)', fontsize=15)
-    plt.ylabel('Power', fontsize=15)
+    plt.xlabel('Frequency (Hz)', fontsize=16)
+    plt.ylabel('Power', fontsize=16)
 
     if figure_path:
         plt.savefig(figure_path, dpi=300, bbox_inches='tight')
