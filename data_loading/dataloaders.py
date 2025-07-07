@@ -1,47 +1,69 @@
-from typing import Tuple
+from typing import List
 from torch.utils.data import DataLoader, TensorDataset, random_split
 import torch
 
 
 def split_dataset(
-        dataset: TensorDataset, train_ratio: float,
+        dataset: TensorDataset,
+        ratios: List[float],
+        shuffling: List[bool],
         batch_size: int = 8,
         seed: int = 42
-    ) -> Tuple[DataLoader, DataLoader]:
+    ) -> List[DataLoader]:
     """
-    Splits the dataset into training and validation sets,
+    Splits the dataset into multiple subsets
     and create DataLoaders for each set.
 
     Parameters
     ----------
     dataset : TensorDataset
         The dataset to split.
-    train_ratio : float
-        The ratio of the dataset to use for training.
+    ratios : List[float]
+        A list of ratios for splitting the dataset.
+        Each ratio must be between 0 and 1 (exclusive).
+    shuffling : List[bool]
+        A list of booleans indicating whether to shuffle each subset.
+        The length must match the number of ratios.
+    batch_size : int, optional
+        The batch size for the DataLoader, by default 8.
+    seed : int, optional
+        Random seed for reproducibility, by default 42.
 
     Returns
     -------
-    Tuple[DataLoader, DataLoader]
-        Training and validation datasets.
+    List[DataLoader]
+        A list of DataLoaders for each subset of the dataset.
     """
     # set seed
     torch.manual_seed(seed)
 
-    if not (0 < train_ratio < 1):
-        raise ValueError("train_ratio must be between 0 and 1.")
-
     n_samples = len(dataset)
-    n_train = int(n_samples * train_ratio)
 
-    train_dataset, val_dataset = random_split(
-        dataset, [n_train, n_samples - n_train]
+    sample_sizes = []
+    
+    for i, ratio in enumerate(ratios):
+        if ratio <= 0 or ratio >= 1:
+            raise ValueError(
+                "All ratios must be between 0 and 1 (exclusive).")
+
+        if i == len(ratios) - 1:
+            sample_sizes.append(n_samples - sum(sample_sizes))
+        else:
+            sample_sizes.append(int(n_samples * ratio))
+
+    sub_datasets = random_split(
+        dataset, sample_sizes
     )
 
-    train_loader = DataLoader(
-        train_dataset, batch_size, shuffle=True
-    )
-    test_loader = DataLoader(
-        val_dataset, batch_size, shuffle=False
-    )
+    data_loaders = []
 
-    return train_loader, test_loader
+    for i, sub_dataset in enumerate(sub_datasets):
+        data_loaders.append(
+            DataLoader(
+                sub_dataset,
+                batch_size=batch_size,
+                shuffle=shuffling[i]
+            )
+        )
+
+    return data_loaders

@@ -97,10 +97,12 @@ Example Usage:
 ```shell
 python3 train_classifier.py \
     --sample_path data/samples.npz \
+    --subject_id 1 \
     --figure_dir figures \
     --model_dir checkpoints \
     --channel_file channel_selections.json \
     --config_file configs/general_configs.json \
+    --result_file results/tone_classification.csv \
     --target tones \
     --batch_size 32 \
     --lr 0.001 \

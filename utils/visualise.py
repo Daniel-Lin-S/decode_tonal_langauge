@@ -8,6 +8,7 @@ import json
 
 def plot_training_losses(
         losses: List[List[float]],
+        vali_losses: Optional[List[List[float]]] = None,
         figure_path: Optional[str]=None
     ) -> None:
     """
@@ -17,14 +18,25 @@ def plot_training_losses(
     Parameters
     -----------
     losses : List[List[float]]
-        A list of lists where each inner list contains the loss values for a single trial 
-        across epochs.
+        A list of lists where each inner list contains the
+        loss values for a single trial across epochs.
+    vali_losses : Optional[List[List[float]]], default=None
+        A list of lists where each inner list contains the
+        validation loss values for a single trial across epochs. \n
+        If provided, it will be plotted alongside the training losses.
     figure_path : Optional[str], default=None
-        The file path where the plot will be saved. If None, the plot will be displayed 
+        The file path where the plot will be saved. \n
+        If None, the plot will be displayed 
         interactively instead of being saved.
     """
+    num_epochs = min(len(loss) for loss in losses)
+    truncated_losses = [np.array(loss)[:num_epochs] for loss in losses]
+    if vali_losses is not None:
+        num_vali_epochs = min(len(vali_loss) for vali_loss in vali_losses)
+        truncated_vali_losses = [
+            np.array(vali_loss)[:num_vali_epochs] for vali_loss in vali_losses]
 
-    mean_loss = np.mean(losses, axis=0)
+    mean_loss = np.mean(truncated_losses, axis=0)
 
     plt.figure(figsize=(10, 5))
     for i, loss_curve in enumerate(losses):
@@ -33,7 +45,18 @@ def plot_training_losses(
         plt.plot(loss_curve, color=color, alpha=0.3) 
 
     # Solid thick line for mean loss
-    plt.plot(mean_loss, color='red', linewidth=2.5, label='Mean Loss')
+    plt.plot(mean_loss, color='blue', linewidth=2.5, label='Mean Loss')
+
+    if vali_losses is not None:
+        mean_vali_loss = np.mean(truncated_vali_losses, axis=0)
+        plt.plot(
+            mean_vali_loss, color='green',
+            linewidth=2.5, label='Mean Validation Loss',
+            linestyle='--')
+
+        for i, vali_curve in enumerate(vali_losses):
+            color = plt.cm.Greens(0.3 + (i / len(vali_losses)) * 0.7)  
+            plt.plot(vali_curve, color=color, alpha=0.3, linestyle='--')
 
     plt.xlabel('Epochs')
     plt.ylabel('Loss')

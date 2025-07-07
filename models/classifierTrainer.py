@@ -6,7 +6,7 @@ from torchmetrics.classification import (
     MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix
 )
 
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Dict
 
 from .classifier import ClassifierModel
 
@@ -120,8 +120,10 @@ class ClassifierTrainer:
     def train(
             self, train_loader: DataLoader,
             epochs: int,
+            vali_loader: Optional[DataLoader]=None,
+            patience: int=5,
             verbose: bool=True
-        ) -> List[Tuple[float, float]]:
+        ) -> List[Dict[str, float]]:
         """
         Train the model using the provided training data loader.
 
@@ -131,20 +133,35 @@ class ClassifierTrainer:
             DataLoader for the training dataset.
         epochs : int
             Number of epochs to train the model.
+        vali_loader : DataLoader, optional
+            DataLoader for the validation dataset.
+            If provided, early stopping will be
+            applied based on validation loss,
+            by default None.
+        patience : int, optional
+            Number of epochs with no improvement
+            after which training will be stopped.
+            Used for early stopping, by default 5.
         verbose : bool, optional
             If True, prints training progress, by default True.
 
         Return
         -------
-        history : list of tuples
-            A list containing tuples of (epoch_loss, epoch_accuracy)
-            for each epoch.
+        history : list of dicts
+            A list of dictionaries containing training and validation
+            loss and accuracy for each epoch.
+            Keys: 'train_loss', 'train_accuracy', and
+            'vali_loss', 'vali_accuracy' (only if vali_loader is provided).
         """
         self.model.train()
         history = []
+        best_vali_loss = float('inf')
+        counter = 0   # Counter for early stopping
+
         for epoch in range(epochs):
             epoch_loss = 0
-            accuracies = []
+            epoch_accuracy = 0
+
             for inputs, targets in train_loader:
                 inputs = inputs.to(self.device)
                 self.optimizer.zero_grad()
@@ -154,15 +171,102 @@ class ClassifierTrainer:
                 loss.backward()
                 self.optimizer.step()
                 epoch_loss += loss.item()
-                accuracies.append(self.acc_metric(outputs, targets).item())
+                epoch_accuracy = self.acc_metric(outputs, targets).item()
+
             epoch_loss /= len(train_loader)
-            epoch_accuracy = sum(accuracies) / len(accuracies)
-            history.append((epoch_loss, epoch_accuracy))
-            if verbose:
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, "
-                      f"Accuracy: {epoch_accuracy:.4f}")
+            epoch_accuracy /= len(train_loader)
+
+            if vali_loader is not None:
+                vali_loss, vali_accuracy = self.vali(vali_loader)
+
+                if vali_loss < best_vali_loss:
+                    best_vali_loss = vali_loss
+                    if verbose:
+                        print(
+                            "Validaton loss improved, saving model..."
+                        )
+                    best_model_states = self.model.state_dict()
+                else:
+                    counter += 1
+
+                if verbose:
+                    print(f"Epoch {epoch+1}/{epochs}, "
+                          f"Train Loss: {epoch_loss:.4f}, "
+                          f"Train Accuracy: {epoch_accuracy:.4f}, "
+                          f"Validation Loss: {vali_loss:.4f}"
+                          f", Validation Accuracy: {vali_accuracy:.4f}"
+                        )
+
+                history.append({
+                    'train_loss': epoch_loss,
+                    'train_accuracy': epoch_accuracy,
+                    'vali_loss': vali_loss,
+                    'vali_accuracy': vali_accuracy
+                })
+
+                if counter >= patience:
+                    if verbose:
+                        print(
+                            f"Early stopping at epoch {epoch+1}, "
+                            "no improvement in validation loss."
+                        )
+                    break
+            else:
+                if verbose:
+                    print(f"Epoch {epoch+1}/{epochs}, "
+                        f"Training Loss: {epoch_loss:.4f}"
+                        f", Training Accuracy: {epoch_accuracy:.4f}")
+                
+                history.append({
+                    'train_loss': epoch_loss,
+                    'train_accuracy': epoch_accuracy
+                })
+
+        if vali_loader is not None:
+            self.model.load_state_dict(best_model_states)
 
         return history
+    
+    def vali(self, vali_loader: DataLoader) -> torch.Tensor:
+        """
+        Validate the model using the provided validation data loader.
+
+        Parameters
+        ----------
+        vali_loader : DataLoader
+            DataLoader for the validation dataset.
+
+        Returns
+        -------
+        vali_loss : float
+            The validation loss computed over the validation dataset,
+            averaged across all batches.
+        vali_accuracy : float
+            The validation accuracy computed over the validation dataset,
+            averaged across all batches.
+        """
+        self.model.eval()
+        self.acc_metric.reset()
+
+        vali_loss = 0.0
+        vali_accuracy = 0.0
+
+        with torch.no_grad():
+            for inputs, targets in vali_loader:
+                inputs = inputs.to(self.device)
+                targets = targets.long().to(self.device)
+                outputs = self.model(inputs)
+
+                vali_loss += self.criterion(outputs, targets).item()
+                vali_accuracy += self.acc_metric(outputs, targets).item()
+
+        vali_loss /= len(vali_loader)
+        vali_accuracy /= len(vali_loader)
+
+        self.model.train()
+        self.acc_metric.reset()
+
+        return vali_loss, vali_accuracy
 
     def evaluate(
             self, test_loader: DataLoader

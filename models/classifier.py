@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import torch.nn as nn
 import torch
+from typing import Dict
+
 
 class ClassifierModel(nn.Module, ABC):
     """
@@ -43,3 +45,17 @@ class ClassifierModel(nn.Module, ABC):
             for each class.
         """
         pass
+
+    def get_layer_nparams(self) -> Dict[str, int]:
+        """
+        Get the number of trainable parameters for
+        each layer in the model.
+        """
+        layer_nparams = {}
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                layer_name = name.split('.')[0]  # Get the layer name
+                if layer_name not in layer_nparams:
+                    layer_nparams[layer_name] = 0
+                layer_nparams[layer_name] += param.numel()
+        return layer_nparams

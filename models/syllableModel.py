@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from typing import Dict
 
 from .classifier import ClassifierModel
 
@@ -142,17 +141,3 @@ class Model(ClassifierModel):
             temporal_length = (temporal_length + 2 * padding - kernel_size) // stride + 1
 
         return temporal_length
-
-    def get_layer_nparams(self) -> Dict[str, int]:
-        """
-        Get the number of trainable parameters for
-        each layer in the model.
-        """
-        layer_nparams = {}
-        for name, param in self.named_parameters():
-            if param.requires_grad:
-                layer_name = name.split('.')[0]  # Get the layer name
-                if layer_name not in layer_nparams:
-                    layer_nparams[layer_name] = 0
-                layer_nparams[layer_name] += param.numel()
-        return layer_nparams

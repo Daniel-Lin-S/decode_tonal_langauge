@@ -15,6 +15,7 @@ from torch.utils.data import TensorDataset
 import os
 import numpy as np
 import json
+import pandas as pd
 
 from models import syllableModel, toneModel
 from models.classifierTrainer import ClassifierTrainer
@@ -45,10 +46,18 @@ parser.add_argument(
     help='Path to the JSON file with necessary hyperparameters'
 )
 parser.add_argument(
+    '--result_file', required=True, type=str,
+    help='Path to the csv file to save the results. '
+)
+parser.add_argument(
     '--model_dir', type=str, required=False,
     default=None,
     help='Directory to save the trained model. '
     'If not specified, the model will not be saved.'
+)
+parser.add_argument(
+    '--subject_id', type=int, required=True,
+    help='Subject ID, used to name the output files.'
 )
 # ----- Experiment Settings -------
 parser.add_argument(
@@ -72,8 +81,14 @@ parser.add_argument(
 )
 # ----- Training settings -------
 parser.add_argument(
-    '--train_ratio', type=float, default=0.9,
-    help='Ratio of the dataset to use for training. Default is 0.9.')
+    '--train_ratio', type=float, default=0.7,
+    help='Ratio of the dataset to use for training. Default is 0.7.')
+parser.add_argument(
+    '--vali_ratio', type=float, default=0.1,
+    help='Ratio of the dataset to use for validation. Default is 0.1.')
+parser.add_argument(
+    '--test_ratio', type=float, default=0.2,
+    help='Ratio of the dataset to use for testing. Default is 0.2.')
 parser.add_argument(
     '--device', type=str, default='cuda:0',
     help='Device to use for training. Default is "cuda". ' \
@@ -88,47 +103,70 @@ parser.add_argument(
 parser.add_argument(
     '--lr', type=float, default=0.0005,
     help='Learning rate for the optimizer. Default is 0.0005.')
+parser.add_argument(
+    '--patience', type=int, default=5,
+    help='Number of epochs with no improvement after which '
+    'training will be stopped. Default is 5.'
+)
 
 
 if __name__ == '__main__':
     params = parser.parse_args()
 
+    # ------ Value checks -------
+    if 'cuda' in params.device and not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is not available. Please use 'cpu' as device.")
+
+    if params.train_ratio + params.vali_ratio + params.test_ratio != 1.0:
+        raise ValueError(
+            "The sum of train_ratio, vali_ratio, and test_ratio must be 1.0. "
+            f"Current values: train_ratio={params.train_ratio}, "
+            f"vali_ratio={params.vali_ratio}, test_ratio={params.test_ratio}")
+    
+    if params.target not in ['tones', 'syllables']:
+        raise ValueError(
+            f"Invalid target '{params.target}'. "
+            "Choose either 'tones' or 'syllables'.")
+    
+    if not os.path.exists(params.sample_path):
+        raise FileNotFoundError(
+            f"Data file '{params.sample_path}' does not exist.")
+
+     # ------- Load configuration file -------
     with open(params.config_file, 'r') as f:
         config = json.load(f)
     
     syllable_labels = config.get('syllable_labels')
 
-    # check CUDA availability
-    if 'cuda' in params.device and not torch.cuda.is_available():
-        raise RuntimeError(
-            "CUDA is not available. Please use 'cpu' as device.")
-
+    # ------- Create directories if they do not exist -------
     if not os.path.exists(params.figure_dir):
         os.makedirs(params.figure_dir)
 
     if params.model_dir is not None and not os.path.exists(params.model_dir):
         os.makedirs(params.model_dir)
 
-    np.random.seed(params.seed)
-    seeds = np.random.randint(0, 10000, params.repeat)
+    results_dir = os.path.dirname(params.result_file)
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
 
-    if not os.path.exists(params.sample_path):
-        raise FileNotFoundError(
-            f"Data file '{params.sample_path}' does not exist.")
+    # ------- Prepare dataset -------
 
     dataset = np.load(params.sample_path)
 
     if params.target == 'tones':
         with open(params.channel_file, 'r') as f:
             channel_selections = json.load(f)
-        tone_discriminative_channels = channel_selections['tone_discriminative']
+        tone_discriminative_channels = channel_selections[
+            'tone_discriminative']
 
         all_erps, labels = dataset['ecog'], dataset['tone'].flatten()
         all_erps = all_erps[:, tone_discriminative_channels, :]
     elif params.target == 'syllables':
         with open(params.channel_file, 'r') as f:
             channel_selections = json.load(f)
-        syllable_discriminative_channels = channel_selections['syllable_discriminative']
+        syllable_discriminative_channels = channel_selections[
+            'syllable_discriminative']
 
         all_erps, labels = dataset['ecog'], dataset['syllable'].flatten()
         all_erps = all_erps[:, syllable_discriminative_channels, :]
@@ -151,16 +189,24 @@ if __name__ == '__main__':
 
     n_classes = len(np.unique(labels))
 
+    # ------- Start experiments -------
+    np.random.seed(params.seed)
+    seeds = np.random.randint(0, 10000, params.repeat)
+
     accuracies = []
     f1_scores = []
-    losses = []
+    train_losses = []
+    vali_losses = []
     confusion_mat = np.zeros((n_classes, n_classes))
 
     for i, seed in enumerate(seeds):
         set_seeds(seed)
 
-        train_loader, test_loader = split_dataset(
-            dataset_tensor, params.train_ratio, params.batch_size,
+        data_loaders = split_dataset(
+            dataset_tensor, 
+            [params.train_ratio, params.vali_ratio, params.test_ratio],
+            shuffling=[True, False, False],
+            batch_size=params.batch_size,
             seed=seed
         )
 
@@ -173,20 +219,23 @@ if __name__ == '__main__':
             model = toneModel.Model(
                 n_channels, seq_length, n_classes).to(params.device)
 
-        if params.verbose > 0 and i == 0:
+        model_verbose = params.verbose > 0 and i == 0
+        if model_verbose:
             print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
         trainer = ClassifierTrainer(
             model, device=params.device,
             learning_rate=params.lr,
-            verbose=False
+            verbose=model_verbose
         )
 
         if params.verbose > 0:
             print(f"Training with seed {seed} ...")
 
         history = trainer.train(
-            train_loader, epochs=params.epochs,
+            data_loaders[0], epochs=params.epochs,
+            vali_loader=data_loaders[1],
+            patience=params.patience,
             verbose=trainer_verbose
         )
 
@@ -200,7 +249,7 @@ if __name__ == '__main__':
             if params.verbose > 0:
                 print(f"Model saved to {model_save_path}")
 
-        accuracy, f1, conf = trainer.evaluate(test_loader)
+        accuracy, f1, conf = trainer.evaluate(data_loaders[2])
         accuracies.append(accuracy)
         f1_scores.append(f1)
         confusion_mat += conf
@@ -210,8 +259,11 @@ if __name__ == '__main__':
                   f"Test accuracy: {accuracy:.4f}, "
                   f"F1 score: {f1:.4f}")
 
-        losses.append([loss for loss, _ in history])
+        train_losses.append([item['train_loss'] for item in history])
+        vali_losses.append([item['vali_loss'] for item in history])
 
+
+    # --------- Save results ---------
     print(f"-------- Training completed over {params.repeat} runs --------")
     print(
         f"Average accuracy over {params.repeat} runs: {np.mean(accuracies):.4f}"
@@ -221,8 +273,37 @@ if __name__ == '__main__':
         f" ± {np.std(f1_scores):.4f}"
     )
 
+    experiment_results = {
+        'subject': params.subject_id,
+        'target' : params.target,
+        'seeds' : str(seeds),
+        'learning_rate' : params.lr,
+        'epochs': params.epochs,
+        'patience': params.patience,
+        'batch_size': params.batch_size,
+        'accuracy_mean': np.mean(accuracies),
+        'accuracy_std': np.std(accuracies),
+        'f1_mean': np.mean(f1_scores),
+        'f1_std': np.std(f1_scores),
+        'all_accuracies': str(accuracies),
+        'all_f1_scores': str(f1_scores),
+        'confusion_matrix': str(confusion_mat.tolist())
+    }
+
+    results_df = pd.DataFrame([experiment_results])
+
+    if os.path.exists(params.result_file):
+        results_df.to_csv(
+            params.result_file, mode='a', header=False, index=False
+        )
+    else:
+        results_df.to_csv(
+            params.result_file, index=False
+        )
+    print(f"Results saved to {params.result_file}")
+
     plot_training_losses(
-        losses,
+        train_losses, vali_losses=vali_losses,
         figure_path=os.path.join(params.figure_dir, 'training_losses.png')
     )
 
