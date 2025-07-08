@@ -78,6 +78,11 @@ parser.add_argument(
     'If not provided, the model will be trained from scratch.'
 )
 parser.add_argument(
+    '--synthesis_model_name', type=str, required=True,
+    help='Name of the synthesizer classification model to use'
+    'Must match the syllable_model_path if provided.'
+)
+parser.add_argument(
     '--syllable_model_name', type=str, required=True,
     help='Name of the syllable classification model to use'
     'Must match the syllable_model_path if provided.'
@@ -126,6 +131,8 @@ parser.add_argument(
     '--lr', type=float, default=0.0005,
     help='Learning rate for the optimizer. Default is 0.0005.')
 
+
+synthesis_models = ['SynthesisLite', 'SynthesisFull']
 
 if __name__ == '__main__':
     params = parser.parse_args()
@@ -307,10 +314,21 @@ if __name__ == '__main__':
             seed=seed
         )
 
-        model = SynthesisLite(
-            output_dim = mels_dim, n_channels=n_channels,
-            n_timepoints=n_timepoints
-        )
+        if params.synthesis_model_name == 'SynthesisLite':
+            model = SynthesisLite(
+                output_dim=mels_dim, n_channels=n_channels,
+                n_timepoints=n_timepoints
+            )
+        elif params.synthesis_model_name == 'SynthesisFull':
+            model = SynthesisModelCNN(
+                output_dim = mels_dim, n_channels=n_channels,
+                n_timepoints=n_timepoints
+            )
+        else:
+            raise ValueError(
+                f"Unknown synthesizer model name: {params.synthesizer_model_name}. "
+                f"Supported models: {synthesis_models}."
+            )
 
         trainer_verbose = params.verbose > 0 and i == 0
         trainer = SynthesisTrainer(

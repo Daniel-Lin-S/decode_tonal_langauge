@@ -479,7 +479,8 @@ def plot_metric(
         data: pd.DataFrame, metric: str, output_path: str = None,
         title: str = "Model Performance Comparison",
         chance_line: Optional[float] = None,
-        plot_model_size: bool=True
+        plot_model_size: bool=True,
+        model_name_map: Optional[dict] = None
     ) -> None:
     """
     Generalized function to plot a metric (e.g., accuracy or F1 score) comparison
@@ -503,6 +504,12 @@ def plot_metric(
     chance_line : float, optional
         If provided, a horizontal line will be drawn at this value
         to indicate the chance level for the metric.
+    plot_model_size : bool, default=True
+        If True, the size of the points will be proportional to the model size.
+        Requires 'model_size' column in the DataFrame.
+    model_name_map : dict, optional
+        A dictionary to map model names to more descriptive labels.
+        If None, the original model names will be used.
     """
     if plot_model_size and 'model_size' not in data.columns:
         raise ValueError(
@@ -530,12 +537,17 @@ def plot_metric(
     data['offset'] = data['model_name'].map(model_offsets)
     data['x_numeric'] = data['subject_idx'] + data['offset']
 
+    if model_name_map:
+        data['model_display'] = data['model_name'].map(model_name_map)
+    else:
+        data['model_display'] = data['model_name']
+
     if plot_model_size:
         ax = sns.scatterplot(
             data=data,
             x='x_numeric',
             y=metric_mean,
-            hue='model_name',
+            hue='model_display',
             size='model_size',
             sizes=(50, 1000),
             palette='Set2',
@@ -546,7 +558,7 @@ def plot_metric(
             data=data,
             x='x_numeric',
             y=metric_mean,
-            hue='model_name',
+            hue='model_display',
             palette='Set2',
             legend='brief'
         )
