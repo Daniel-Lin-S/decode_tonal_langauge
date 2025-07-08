@@ -213,7 +213,7 @@ if __name__ == '__main__':
             n_classes=n_syllables,
             **syllable_model_kwargs
         )
-    elif params.syllable_model_name == 'LogisticRegression':
+    elif params.syllable_model_name == 'logistic':
         syllable_model = LogisticRegressionClassifier(
             input_dim=n_syllable_channels * seq_length,
             n_classes=n_syllables,
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     else:
         raise ValueError(
             f"Unknown syllable model name: {params.syllable_model_name}. "
-            "Supported models: CNN, ShallowNN, LogisticRegression, CNNRNN."
+            "Supported models: CNN, ShallowNN, logistic, CNNRNN."
         )
     
     tone_model_kwargs = config.get('tone_model_kwargs', {})
@@ -246,7 +246,7 @@ if __name__ == '__main__':
             n_classes=n_tones,
             **tone_model_kwargs
         )
-    elif params.tone_model_name == 'LogisticRegression':
+    elif params.tone_model_name == 'logistic':
         tone_model = LogisticRegressionClassifier(
             input_dim=n_tone_channels * seq_length,
             n_classes=n_tones,
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     else:
         raise ValueError(
             f"Unknown tone model name: {params.tone_model_name}. "
-            "Supported models: CNN, ShallowNN, LogisticRegression, CNNRNN."
+            "Supported models: CNN, ShallowNN, logistic, CNNRNN."
         )
 
     train_classifiers = True
@@ -355,7 +355,7 @@ if __name__ == '__main__':
         'tone_model_kwargs' : str(tone_model_kwargs),
         'syllable_model' : params.syllable_model_name,
         'syllable_model_kwargs' : str(syllable_model_kwargs),
-        'subject_id': params.subject_id,
+        'subject': params.subject_id,
         'mel_kwargs': str(mel_kwargs),
         'seeds' : str(seeds.tolist()),
         'batch_size': params.batch_size,
