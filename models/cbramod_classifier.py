@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
-from foundation.CBraMod import CBraMod
+from .foundation.CBraMod import CBraMod
 from .classifier import ClassifierModel
 
 

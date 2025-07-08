@@ -24,6 +24,7 @@ import pandas as pd
 from models.classifierTrainer import ClassifierTrainer
 from models.simple_classifiers import LogisticRegressionClassifier, ShallowNNClassifier
 from models.deep_classifiers import CNNClassifier, CNNRNNClassifier
+from models.cbramod_classifier import CBraModClassifier
 from utils.utils import set_seeds
 from utils.visualise import plot_training_losses, plot_confusion_matrix
 
@@ -68,6 +69,10 @@ parser.add_argument(
     '--model_name', type=str, required=True,
     help='Name of the model to be trained. Will be used to name the output files.'
     ' Options: ["logistic", "CNN", "CNN-RNN", "ShallowNN"]'
+)
+parser.add_argument(
+    '--foundation_weights_path', type=str, default=None,
+    help='Path to the pre-trained weights for the foundation model. '
 )
 # ----- Experiment Settings -------
 parser.add_argument(
@@ -256,6 +261,14 @@ if __name__ == '__main__':
                 input_channels=n_channels,
                 input_length=seq_length,
                 n_classes=n_classes,
+                **classifier_kwargs
+            ).to(params.device)
+        elif params.model_name == 'CBraMod':
+            model = CBraModClassifier(
+                input_channels=n_channels,
+                input_length=seq_length,
+                n_classes=n_classes,
+                pretrained_weights_path=params.foundation_weights_path,
                 **classifier_kwargs
             ).to(params.device)
         else:
