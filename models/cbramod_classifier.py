@@ -5,6 +5,7 @@ Please download pre-trained CBraMod weights from https://huggingface.co/weightin
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
+from scipy.signal import resample
 
 from .foundation.CBraMod import CBraMod
 from .classifier import ClassifierModel
@@ -52,10 +53,12 @@ class CBraModClassifier(ClassifierModel):
             self, n_classes: int,
             input_channels: int,
             input_length: int,
+            input_sampling_rate: int = 200,
             use_pretrained_weights: bool = True,
             pretrained_weights_path: str = None,
             backbone_kwargs: dict = {},
-            activation: str='ELU'
+            activation: str='ELU',
+            device: str = 'cpu'
         ):
         """
         Parameters
@@ -66,6 +69,11 @@ class CBraModClassifier(ClassifierModel):
             Number of input channels (e.g., EEG channels).
         input_length : int
             Length of the input time series (number of timepoints).
+        input_sampling_rate : int, optional
+            Sampling rate of the input data, by default 200.
+            If the sampling rate is not 200Hz,
+            the input will be resampled to 200Hz to align
+            with the CBraMod backbone requirements.
         use_pretrained_weights : bool, optional
             Whether to use pretrained weights, by default True.
         pretrained_weights_path : str, optional
@@ -76,9 +84,12 @@ class CBraModClassifier(ClassifierModel):
             the published weights will not work.
         activation : str, optional
             Activation function to use in the classifier, by default 'ELU'.
+        device : str, optional
+            Device to load the backbone model onto, by default 'cpu'.
         """
         super(CBraModClassifier, self).__init__(n_classes)
         self.backbone = CBraMod(**backbone_kwargs)
+        self.input_sampling_rate = input_sampling_rate
 
         self.in_dim = backbone_kwargs.get('in_dim', 200)
 
@@ -88,12 +99,14 @@ class CBraModClassifier(ClassifierModel):
                     "Pretrained weights path must be provided "
                     "if use_pretrained_weights is True."
                 )
-            self.backbone.load_state_dict(torch.load(pretrained_weights_path))
+            self.backbone.load_state_dict(
+                torch.load(pretrained_weights_path, map_location=device),
+            )
 
         self.backbone.proj_out = nn.Identity()
 
         self.classifier = nn.Sequential(
-            Rearrange('b c s d - >b (c s d)'),
+            Rearrange('b c s d -> b (c s d)'),
             nn.Linear(input_channels * input_length, input_length),
             _get_activation(activation),
             nn.Dropout(),
@@ -115,14 +128,14 @@ class CBraModClassifier(ClassifierModel):
             Output tensor of shape (batch_size, n_classes).
             The logits for each class and each batch.
         """
-        if x.shape[2] % self.in_dim != 0:
-            raise ValueError(
-                "Input tensor's time dimension must be a multiple of in_dim."
-                f" Received input shape: {x.shape}, in_dim: {self.in_dim}"
-            )
+        if self.input_sampling_rate != self.in_dim:
+            # Resample the input to match the required sampling rate
+            num_samples = int(x.shape[2] * self.in_dim / self.input_sampling_rate)
+            x = resample(x, num_samples, axis=2)
 
         # cut into segments
-        x = x.view(x.shape[0], x.shape[1], -1, 200)
+        x = x.view(x.shape[0], x.shape[1], -1, self.in_dim)
 
         features = self.backbone.forward(x)
+
         return self.classifier(features)

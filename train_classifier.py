@@ -125,7 +125,7 @@ parser.add_argument(
 )
 
 
-model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN']
+model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN', 'CBraMod']
 
 if __name__ == '__main__':
     params = parser.parse_args()
@@ -145,7 +145,7 @@ if __name__ == '__main__':
         raise FileNotFoundError(
             f"Data file '{params.sample_path}' does not exist.")
 
-     # ------- Load configuration file -------
+    # ------- Load configuration file -------
     with open(params.config_file, 'r') as f:
         config = json.load(f)
     
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     dataset = np.load(params.sample_path)
 
     with open(params.channel_file, 'r') as f:
-                channel_selections = json.load(f)
+        channel_selections = json.load(f)
 
     try:
         channels = channel_selections[f'{params.target}_discriminative']
@@ -269,6 +269,7 @@ if __name__ == '__main__':
                 input_length=seq_length,
                 n_classes=n_classes,
                 pretrained_weights_path=params.foundation_weights_path,
+                device=params.device,
                 **classifier_kwargs
             ).to(params.device)
         else:
