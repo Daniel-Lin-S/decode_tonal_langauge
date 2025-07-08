@@ -50,6 +50,12 @@ class ClassifierModel(nn.Module, ABC):
         """
         Get the number of trainable parameters for
         each layer in the model.
+
+        Returns
+        -------
+        Dict[str, int]
+            Dictionary where keys are layer names and values
+            are the number of trainable parameters in that layer.
         """
         layer_nparams = {}
         for name, param in self.named_parameters():
@@ -59,3 +65,14 @@ class ClassifierModel(nn.Module, ABC):
                     layer_nparams[layer_name] = 0
                 layer_nparams[layer_name] += param.numel()
         return layer_nparams
+
+    def get_nparams(self) -> int:
+        """
+        Get the total number of trainable parameters in the model.
+        
+        Returns
+        -------
+        int
+            Total number of trainable parameters.
+        """
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

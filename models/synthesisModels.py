@@ -34,6 +34,17 @@ class SynthesisModel(nn.Module, ABC):
         """
         pass
 
+    def get_nparams(self) -> int:
+        """
+        Get the total number of trainable parameters in the model.
+        
+        Returns
+        -------
+        int
+            Total number of trainable parameters.
+        """
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
 
 class SynthesisModelCNN(SynthesisModel):
     def __init__(

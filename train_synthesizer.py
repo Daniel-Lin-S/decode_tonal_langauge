@@ -22,7 +22,8 @@ from utils.visualise import plot_training_losses
 from utils.audio import mel_to_audio, compare_mels, audio_to_mel
 from models.synthesisModels import SynthesisModelCNN, SynthesisLite
 from models.synthesisTrainer import SynthesisTrainer
-from models import syllableModel, toneModel
+from models.simple_classifiers import ShallowNNClassifier, LogisticRegressionClassifier
+from models.deep_classifiers import CNNClassifier, CNNRNNClassifier
 
 
 parser = argparse.ArgumentParser(
@@ -64,7 +65,7 @@ parser.add_argument(
 )
 parser.add_argument(
     '--model_name', type=str, required=True,
-    help='Name of the model, will be used to identify the model in the csv file.'
+    help='Name of the synthesis model, will be used to identify the model in the csv file.'
 )
 parser.add_argument(
     '--syllable_model_path', type=str, default=None,
@@ -75,6 +76,16 @@ parser.add_argument(
     '--tone_model_path', type=str, default=None,
     help='Path to the pre-trained tone classification model. '
     'If not provided, the model will be trained from scratch.'
+)
+parser.add_argument(
+    '--syllable_model_name', type=str, required=True,
+    help='Name of the syllable classification model to use'
+    'Must match the syllable_model_path if provided.'
+)
+parser.add_argument(
+    '--tone_model_name', type=str, required=True,
+    help='Name of the tone classification model to use.'
+    'Must match the tone_model_path if provided.'
 )
 # ----- Audio Settings -------
 parser.add_argument(
@@ -186,10 +197,73 @@ if __name__ == '__main__':
     n_syllable_channels = ecog_syllables.shape[1]
     n_tone_channels = ecog_tones.shape[1]
 
-    syllable_model = syllableModel.Model(
-                n_syllable_channels, seq_length, n_syllables).to(params.device)
-    tone_model = toneModel.Model(
-                n_tone_channels, seq_length, n_tones).to(params.device)
+    
+    syllable_model_kwargs = config.get('syllable_model_kwargs', {})
+
+    if params.syllable_model_name == 'CNN':
+        syllable_model = CNNClassifier(
+            input_channels= n_syllable_channels,
+            input_length=seq_length,
+            n_classes=n_syllables,
+            **syllable_model_kwargs
+        )
+    elif params.syllable_model_name == 'ShallowNN':
+        syllable_model = ShallowNNClassifier(
+            input_dim=n_syllable_channels * seq_length,
+            n_classes=n_syllables,
+            **syllable_model_kwargs
+        )
+    elif params.syllable_model_name == 'LogisticRegression':
+        syllable_model = LogisticRegressionClassifier(
+            input_dim=n_syllable_channels * seq_length,
+            n_classes=n_syllables,
+            **syllable_model_kwargs
+        )
+    elif params.syllable_model_name == 'CNNRNN':
+        syllable_model = CNNRNNClassifier(
+            input_channels=n_syllable_channels,
+            input_length=seq_length,
+            n_classes=n_syllables,
+            **syllable_model_kwargs
+        )
+    else:
+        raise ValueError(
+            f"Unknown syllable model name: {params.syllable_model_name}. "
+            "Supported models: CNN, ShallowNN, LogisticRegression, CNNRNN."
+        )
+    
+    tone_model_kwargs = config.get('tone_model_kwargs', {})
+    if params.tone_model_name == 'CNN':
+        tone_model = CNNClassifier(
+            input_channels=n_tone_channels,
+            input_length=seq_length,
+            n_classes=n_tones,
+            **tone_model_kwargs
+        )
+    elif params.tone_model_name == 'ShallowNN':
+        tone_model = ShallowNNClassifier(
+            input_dim=n_tone_channels * seq_length,
+            n_classes=n_tones,
+            **tone_model_kwargs
+        )
+    elif params.tone_model_name == 'LogisticRegression':
+        tone_model = LogisticRegressionClassifier(
+            input_dim=n_tone_channels * seq_length,
+            n_classes=n_tones,
+            **tone_model_kwargs
+        )
+    elif params.tone_model_name == 'CNNRNN':
+        tone_model = CNNRNNClassifier(
+            input_channels=n_tone_channels,
+            input_length=seq_length,
+            n_classes=n_tones,
+            **tone_model_kwargs
+        )
+    else:
+        raise ValueError(
+            f"Unknown tone model name: {params.tone_model_name}. "
+            "Supported models: CNN, ShallowNN, LogisticRegression, CNNRNN."
+        )
 
     train_classifiers = True
     
@@ -198,7 +272,7 @@ if __name__ == '__main__':
     if params.tone_model_path is not None:
         tone_model.load_state_dict((torch.load(params.tone_model_path)))
 
-    if params.syllable_model_path is None and params.tone_model_path is None:
+    if params.syllable_model_path is not None and params.tone_model_path is not None:
         # use pre-trained weights
         train_classifiers = False
 
@@ -271,8 +345,16 @@ if __name__ == '__main__':
     mean_mcd = np.mean(mcds)
     std_mcd = np.std(mcds)
 
+    total_model_size = (
+        model.get_nparams() + syllable_model.get_nparams() + \
+        tone_model.get_nparams())
     results = {
         'model_name': params.model_name,
+        'model_size': total_model_size,
+        'tone_model' : params.tone_model_name,
+        'tone_model_kwargs' : str(tone_model_kwargs),
+        'syllable_model' : params.syllable_model_name,
+        'syllable_model_kwargs' : str(syllable_model_kwargs),
         'subject_id': params.subject_id,
         'mel_kwargs': str(mel_kwargs),
         'seeds' : str(seeds.tolist()),

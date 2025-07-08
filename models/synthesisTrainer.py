@@ -123,13 +123,9 @@ class SynthesisTrainer:
         self.model = synthesize_model.to(device)
 
         if verbose:
-            n_trainable_params = sum(
-                p.numel() for p in self.model.parameters() if p.requires_grad
-            )
-
             print(
                 "Number of trainable parameters in the synthesis model: "
-                f"{n_trainable_params:,}")
+                f"{self.model.get_nparams():,}")
 
         self.optimizer = NAdam(
             self.model.parameters(),

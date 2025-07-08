@@ -7,6 +7,8 @@ Each sample corresponds to a trial in the experiment.
 Required hyper-parameters from the JSON file:
 - syllable_labels: a list of syllable labels, used for visualising the classification results.
   For example, ["ba", "da"] will map label 0 to "ba" and label 1 to "da".
+- [target]_model_kwargs : a dictionary of keyword arguments for the model.
+  target can be 'syllable' or 'tone' depending on the choice of classification target.
 """
 
 import argparse
@@ -17,8 +19,9 @@ import numpy as np
 import json
 import pandas as pd
 
-from models import syllableModel, toneModel
 from models.classifierTrainer import ClassifierTrainer
+from models.simple_classifiers import LogisticRegressionClassifier, ShallowNNClassifier
+from models.deep_classifiers import CNNClassifier, CNNRNNClassifier
 from utils.utils import set_seeds
 from utils.visualise import plot_training_losses, plot_confusion_matrix
 
@@ -62,6 +65,7 @@ parser.add_argument(
 parser.add_argument(
     '--model_name', type=str, required=True,
     help='Name of the model to be trained. Will be used to name the output files.'
+    ' Options: ["logistic", "CNN", "CNN-RNN", "ShallowNN"]'
 )
 # ----- Experiment Settings -------
 parser.add_argument(
@@ -114,6 +118,8 @@ parser.add_argument(
 )
 
 
+model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN']
+
 if __name__ == '__main__':
     params = parser.parse_args()
 
@@ -142,6 +148,7 @@ if __name__ == '__main__':
         config = json.load(f)
     
     syllable_labels = config.get('syllable_labels')
+    classifier_kwargs = config.get(f'{params.target}_model_kwargs', {})
 
     # ------- Create directories if they do not exist -------
     if not os.path.exists(params.figure_dir):
@@ -217,11 +224,69 @@ if __name__ == '__main__':
         trainer_verbose = params.verbose > 1
 
         if params.target == 'syllables':
-            model = syllableModel.Model(
-                n_channels, seq_length, n_classes).to(params.device)
+            if params.model_name == 'logistic':
+                model = LogisticRegressionClassifier(
+                    input_dim=n_channels * seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            elif params.model_name == 'CNN':
+                model = CNNClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            elif params.model_name == 'ShallowNN':
+                model = ShallowNNClassifier(
+                    input_dim=n_channels * seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            elif params.model_name == 'CNN-RNN':
+                model = CNNRNNClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            else:
+                raise ValueError(
+                    f"Invalid model name '{params.model_name}'. "
+                    f"Choose from {model_choices}."
+                )
         elif params.target == 'tones':
-            model = toneModel.Model(
-                n_channels, seq_length, n_classes).to(params.device)
+            if params.model_name == 'logistic':
+                model = LogisticRegressionClassifier(
+                    input_dim=n_channels * seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            elif params.model_name == 'CNN-RNN':
+                model = CNNRNNClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            elif params.model_name == 'CNN':
+                model = CNNClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            elif params.model_name == 'ShallowNN':
+                model = ShallowNNClassifier(
+                    input_dim=n_channels * seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+            else:
+                raise ValueError(
+                    f"Invalid model name '{params.model_name}'. "
+                    f"Choose from {model_choices}."
+                )
 
         model_verbose = params.verbose > 0 and i == 0
         if model_verbose:
@@ -246,7 +311,7 @@ if __name__ == '__main__':
         # save the model
         if params.model_dir is not None:
             model_save_path = os.path.join(
-                params.model_dir, f"{params.target}_model_seed_{seed}.pt")
+                params.model_dir, f"{params.target}_{params.model_name}_seed_{seed}.pt")
             
             torch.save(model.state_dict(), model_save_path)
             
@@ -279,6 +344,8 @@ if __name__ == '__main__':
 
     experiment_results = {
         'model_name': params.model_name,
+        'model_kwargs' : str(classifier_kwargs),
+        'model_size': model.get_nparams(),
         'subject': params.subject_id,
         'target' : params.target,
         'seeds' : str(seeds),

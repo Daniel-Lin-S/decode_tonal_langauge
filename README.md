@@ -115,7 +115,8 @@ Detailed description of each argument can be found in the python files.
 All model architectures and trainers and located in the repository `models`.
 ### Classification Models
 - `classifier.py`: base class for any classification model.
-- `toneModel.py`, `syllableModel.py`: inherited from `ClassifierModel`, classifiers tones and syllable (phoneme) using the architecture propsed in the paper.
+- `simple_classifiers.py`: Simple classifiers serving as benchmarks (e.g. logistic regression, 2-layer perceptron)
+- `deep_classifiers.py`: Deep networks inherited from `ClassifierModel`, classifiers for tones and syllable (phoneme) using the architecture propsed in the paper.
     - It supports arbitrary number of tones and syllables
 - `classifierTrainer.py`: Contains the class used to train and evaluate a ClassifierModel
 ### Audio Synthesis Models

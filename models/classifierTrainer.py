@@ -74,11 +74,7 @@ class ClassifierTrainer:
         self.model = model.to(device)
 
         if verbose:
-            n_trainable_params = sum(
-                p.numel() for p in model.parameters() if p.requires_grad
-            )
-
-            print(f"Number of trainable parameters: {n_trainable_params:,}")
+            print(f"Number of trainable parameters: {self.model.get_nparams():,}")
 
         self.optimizer = NAdam(
             model.parameters(),
