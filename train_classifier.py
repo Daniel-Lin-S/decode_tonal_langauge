@@ -1,14 +1,16 @@
 """
-Data file should have keys "ECoG_toneT{tone}" with shape
+Data file should have keys "ecog" with shape
 (n_samples, n_channels, n_timepoints)
-where {tone} is the index for tone.
+and "{target}" with shape (n_samples,)
+where target is the classification target, e.g. "syllable" or "tone".
 Each sample corresponds to a trial in the experiment.
 
 Required hyper-parameters from the JSON file:
 - syllable_labels: a list of syllable labels, used for visualising the classification results.
   For example, ["ba", "da"] will map label 0 to "ba" and label 1 to "da".
 - [target]_model_kwargs : a dictionary of keyword arguments for the model.
-  target can be 'syllable' or 'tone' depending on the choice of classification target.
+  e.g. 'tone_model_kwargs': {'hidden_dim': 128}. Please refer to the model's documentation
+for available parameters.
 """
 
 import argparse
@@ -134,11 +136,6 @@ if __name__ == '__main__':
             f"Current values: train_ratio={params.train_ratio}, "
             f"vali_ratio={params.vali_ratio}, test_ratio={params.test_ratio}")
     
-    if params.target not in ['tones', 'syllables']:
-        raise ValueError(
-            f"Invalid target '{params.target}'. "
-            "Choose either 'tones' or 'syllables'.")
-    
     if not os.path.exists(params.sample_path):
         raise FileNotFoundError(
             f"Data file '{params.sample_path}' does not exist.")
@@ -165,26 +162,38 @@ if __name__ == '__main__':
 
     dataset = np.load(params.sample_path)
 
-    if params.target == 'tones':
-        with open(params.channel_file, 'r') as f:
-            channel_selections = json.load(f)
-        tone_discriminative_channels = channel_selections[
-            'tone_discriminative']
+    with open(params.channel_file, 'r') as f:
+                channel_selections = json.load(f)
 
-        all_erps, labels = dataset['ecog'], dataset['tone'].flatten()
-        all_erps = all_erps[:, tone_discriminative_channels, :]
-    elif params.target == 'syllables':
-        with open(params.channel_file, 'r') as f:
-            channel_selections = json.load(f)
-        syllable_discriminative_channels = channel_selections[
-            'syllable_discriminative']
+    try:
+        channels = channel_selections[f'{params.target}_discriminative']
+    except KeyError:
+        raise KeyError(
+            f"Channel selection for '{params.target}_discriminative' "
+            "not found in the channel file. "
+            "Please check the channel_file or the target variable."
+            f"Available keys in the file: {', '.join(channel_selections.keys())}"
+        )
 
-        all_erps, labels = dataset['ecog'], dataset['syllable'].flatten()
-        all_erps = all_erps[:, syllable_discriminative_channels, :]
-    else:
-        raise ValueError(
-            f"Invalid target '{params.target}'. "
-            "Choose either 'tones' or 'syllables'.")
+    try:
+        all_erps = dataset['ecog']
+    except KeyError:
+        raise KeyError(
+            "The dataset does not contain 'ecog' key. "
+            "Please check the data file. "
+            f"Available keys in the file: {', '.join(dataset.keys())}"
+        )
+
+    try:
+        labels = dataset[f'{params.target}'].flatten()
+    except:
+        raise KeyError(
+            f"The dataset does not contain '{params.target}' key. "
+            "Please check the data file. "
+            f"Available keys in the file: {', '.join(dataset.keys())}"
+        )
+
+    all_erps = all_erps[:, channels, :]
 
     erps_tensor = torch.tensor(
         all_erps, dtype=torch.float32).to(params.device)
@@ -223,70 +232,37 @@ if __name__ == '__main__':
 
         trainer_verbose = params.verbose > 1
 
-        if params.target == 'syllables':
-            if params.model_name == 'logistic':
-                model = LogisticRegressionClassifier(
-                    input_dim=n_channels * seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            elif params.model_name == 'CNN':
-                model = CNNClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            elif params.model_name == 'ShallowNN':
-                model = ShallowNNClassifier(
-                    input_dim=n_channels * seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            elif params.model_name == 'CNN-RNN':
-                model = CNNRNNClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            else:
-                raise ValueError(
-                    f"Invalid model name '{params.model_name}'. "
-                    f"Choose from {model_choices}."
-                )
-        elif params.target == 'tones':
-            if params.model_name == 'logistic':
-                model = LogisticRegressionClassifier(
-                    input_dim=n_channels * seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            elif params.model_name == 'CNN-RNN':
-                model = CNNRNNClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            elif params.model_name == 'CNN':
-                model = CNNClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            elif params.model_name == 'ShallowNN':
-                model = ShallowNNClassifier(
-                    input_dim=n_channels * seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(params.device)
-            else:
-                raise ValueError(
-                    f"Invalid model name '{params.model_name}'. "
-                    f"Choose from {model_choices}."
-                )
+        if params.model_name == 'logistic':
+            model = LogisticRegressionClassifier(
+                input_dim=n_channels * seq_length,
+                n_classes=n_classes,
+                **classifier_kwargs
+            ).to(params.device)
+        elif params.model_name == 'CNN':
+            model = CNNClassifier(
+                input_channels=n_channels,
+                input_length=seq_length,
+                n_classes=n_classes,
+                **classifier_kwargs
+            ).to(params.device)
+        elif params.model_name == 'ShallowNN':
+            model = ShallowNNClassifier(
+                input_dim=n_channels * seq_length,
+                n_classes=n_classes,
+                **classifier_kwargs
+            ).to(params.device)
+        elif params.model_name == 'CNN-RNN':
+            model = CNNRNNClassifier(
+                input_channels=n_channels,
+                input_length=seq_length,
+                n_classes=n_classes,
+                **classifier_kwargs
+            ).to(params.device)
+        else:
+            raise ValueError(
+                f"Invalid model name '{params.model_name}'. "
+                f"Choose from {model_choices}."
+            )
 
         model_verbose = params.verbose > 0 and i == 0
         if model_verbose:
@@ -348,6 +324,7 @@ if __name__ == '__main__':
         'model_size': model.get_nparams(),
         'subject': params.subject_id,
         'target' : params.target,
+        'electrodes': str(channels),
         'seeds' : str(seeds),
         'learning_rate' : params.lr,
         'epochs': params.epochs,
@@ -382,10 +359,13 @@ if __name__ == '__main__':
     # only add numbers to the confusion matrix plot
     # if classes are few to avoid visual clutter
     add_numbers = n_classes <= 10
-    if params.target == 'tones':
-        class_labels = None
-    elif params.target == 'syllables':
+
+    if params.target == 'tone':
+        class_labels = np.arange(1, n_classes + 1).astype(str)
+    elif params.target == 'syllable':
         class_labels = syllable_labels
+    else:
+        class_labels = None
 
     plot_confusion_matrix(
         confusion_mat, add_numbers, label_names=class_labels,
