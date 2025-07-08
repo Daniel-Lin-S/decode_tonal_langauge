@@ -4,6 +4,8 @@ import numpy as np
 from typing import List, Optional
 from matplotlib_venn import venn3
 import json
+import pandas as pd
+import seaborn as sns
 
 
 def plot_training_losses(
@@ -469,5 +471,118 @@ def plot_channel_venn_diagram(
     if figure_path:
         plt.savefig(figure_path, dpi=400)
         plt.close()
+    else:
+        plt.show()
+
+
+def plot_metric(
+        data: pd.DataFrame, metric: str, output_path: str = None,
+        title: str = "Model Performance Comparison",
+        chance_line: Optional[float] = None,
+        plot_model_size: bool=True
+    ) -> None:
+    """
+    Generalized function to plot a metric (e.g., accuracy or F1 score) comparison
+    for different models on each subject using box plots with error bars.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The input DataFrame containing columns:
+        - 'model_name': Name of the model.
+        - 'target': Target variable (e.g., subject or task)
+        - 'subject': Subject identifier.
+        - '<metric>_mean': Mean value of the metric.
+        - '<metric>_std': Standard deviation of the metric. 
+    metric : str
+        The metric to plot (e.g., 'accuracy_mean' or 'f1_mean').
+    output_path : str, optional
+        Path to save the plot. If None, the plot will be displayed interactively.
+    title : str, default="Model Performance Comparison"
+        Title of the plot.
+    chance_line : float, optional
+        If provided, a horizontal line will be drawn at this value
+        to indicate the chance level for the metric.
+    """
+    if plot_model_size and 'model_size' not in data.columns:
+        raise ValueError(
+            "When plot_model_size is True, "
+            "'model_size' must be a column in the DataFrame."
+        )
+
+    metric_mean = f"{metric}_mean"  # Mean column name
+    metric_std = f"{metric}_std"  # Standard deviation column name
+
+    plt.figure(figsize=(14, 8))
+
+     # Ensure 'subject' is categorical and consistent
+    data['subject'] = data['subject'].astype(str)
+    subject_order = sorted(data['subject'].unique())
+    subject_map = {subj: i for i, subj in enumerate(subject_order)}
+    data['subject_idx'] = data['subject'].map(subject_map)
+
+    # Add offset by model for visual separation
+    unique_models = sorted(data['model_name'].unique())
+    model_offsets = {
+        model: i * 0.15 - 0.15 * (len(unique_models) - 1) / 2
+        for i, model in enumerate(unique_models)
+    }
+    data['offset'] = data['model_name'].map(model_offsets)
+    data['x_numeric'] = data['subject_idx'] + data['offset']
+
+    if plot_model_size:
+        ax = sns.scatterplot(
+            data=data,
+            x='x_numeric',
+            y=metric_mean,
+            hue='model_name',
+            size='model_size',
+            sizes=(50, 1000),
+            palette='Set2',
+            legend='brief'
+        )
+    else:
+        ax = sns.scatterplot(
+            data=data,
+            x='x_numeric',
+            y=metric_mean,
+            hue='model_name',
+            palette='Set2',
+            legend='brief'
+        )
+
+    # Add error bars with offsets
+    ax.errorbar(
+        x=data['x_numeric'],
+        y=data[metric_mean],
+        yerr=data[metric_std],
+        fmt='none',
+        capsize=3,
+        ecolor='gray',
+        elinewidth=1,
+        alpha=0.7
+    )
+
+    if chance_line is not None:
+        plt.axhline(
+            y=chance_line, color='red', linestyle='--',
+            label='Chance Level', linewidth=2
+        )
+
+    plt.title(title, fontsize=18)
+    plt.xlabel('Subject', fontsize=16)
+    plt.ylabel(metric.capitalize(), fontsize=16)
+    ax.set_xticks(list(subject_map.values()))
+    ax.set_xticklabels(
+        list(subject_map.keys()),
+        fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.legend(
+        title='Model', loc='upper right',
+        fontsize=14, bbox_to_anchor=(1.2, 1),
+        title_fontsize=16)
+
+    if output_path:
+        plt.savefig(output_path, dpi=400, bbox_inches='tight')
     else:
         plt.show()
