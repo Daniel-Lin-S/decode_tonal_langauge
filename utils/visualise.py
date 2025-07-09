@@ -480,7 +480,8 @@ def plot_metric(
         title: str = "Model Performance Comparison",
         chance_line: Optional[float] = None,
         plot_model_size: bool=True,
-        model_name_map: Optional[dict] = None
+        model_name_map: Optional[dict] = None,
+        legend_offset: float=0.2
     ) -> None:
     """
     Generalized function to plot a metric (e.g., accuracy or F1 score) comparison
@@ -510,6 +511,8 @@ def plot_metric(
     model_name_map : dict, optional
         A dictionary to map model names to more descriptive labels.
         If None, the original model names will be used.
+    legend_offset : float, optional
+        Use a larger value if the captions in your legend are longer.
     """
     if plot_model_size and 'model_size' not in data.columns:
         raise ValueError(
@@ -591,7 +594,7 @@ def plot_metric(
     plt.yticks(fontsize=14)
     plt.legend(
         title='Model', loc='upper right',
-        fontsize=14, bbox_to_anchor=(1.2, 1),
+        fontsize=14, bbox_to_anchor=(1+legend_offset, 1),
         title_fontsize=16)
 
     if output_path:
