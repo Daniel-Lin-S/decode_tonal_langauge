@@ -43,7 +43,7 @@ parser.add_argument(
     help='Directory to save the figures.'
 )
 parser.add_argument(
-    '--channel_file', type=str, default='channel_selections.json',
+    '--channel_file', type=str, default=None,
     help='JSON file containing channel selections for the model. '
     'Must have "syllable_discriminative" and "tone_discriminative" keys.'
 )
@@ -66,9 +66,13 @@ parser.add_argument(
     help='Subject ID, used to name the output files.'
 )
 parser.add_argument(
+    '--model', type=str, required=True,
+    help='The classification to be used'
+    ' Options: ["logistic", "CNN", "CNN-RNN", "ShallowNN"]'
+)
+parser.add_argument(
     '--model_name', type=str, required=True,
     help='Name of the model to be trained. Will be used to name the output files.'
-    ' Options: ["logistic", "CNN", "CNN-RNN", "ShallowNN"]'
 )
 parser.add_argument(
     '--foundation_weights_path', type=str, default=None,
@@ -167,19 +171,6 @@ if __name__ == '__main__':
 
     dataset = np.load(params.sample_path)
 
-    with open(params.channel_file, 'r') as f:
-        channel_selections = json.load(f)
-
-    try:
-        channels = channel_selections[f'{params.target}_discriminative']
-    except KeyError:
-        raise KeyError(
-            f"Channel selection for '{params.target}_discriminative' "
-            "not found in the channel file. "
-            "Please check the channel_file or the target variable."
-            f"Available keys in the file: {', '.join(channel_selections.keys())}"
-        )
-
     try:
         all_erps = dataset['ecog']
     except KeyError:
@@ -198,7 +189,23 @@ if __name__ == '__main__':
             f"Available keys in the file: {', '.join(dataset.keys())}"
         )
 
-    all_erps = all_erps[:, channels, :]
+    # ------ filter channels -------
+    if params.channel_file is not None:
+        with open(params.channel_file, 'r') as f:
+            channel_selections = json.load(f)
+
+        try:
+            channels = channel_selections[f'{params.target}_discriminative']
+        except KeyError:
+            raise KeyError(
+                f"Channel selection for '{params.target}_discriminative' "
+                "not found in the channel file. "
+                "Please check the channel_file or the target variable."
+                f"Available keys in the file: {', '.join(channel_selections.keys())}"
+            )
+        all_erps = all_erps[:, channels, :]
+    else:
+        channels = np.arange(0, all_erps.shape[1])
 
     erps_tensor = torch.tensor(
         all_erps, dtype=torch.float32).to(params.device)
@@ -237,33 +244,33 @@ if __name__ == '__main__':
 
         trainer_verbose = params.verbose > 1
 
-        if params.model_name == 'logistic':
+        if params.model == 'logistic':
             model = LogisticRegressionClassifier(
                 input_dim=n_channels * seq_length,
                 n_classes=n_classes,
                 **classifier_kwargs
             ).to(params.device)
-        elif params.model_name == 'CNN':
+        elif params.model == 'CNN':
             model = CNNClassifier(
                 input_channels=n_channels,
                 input_length=seq_length,
                 n_classes=n_classes,
                 **classifier_kwargs
             ).to(params.device)
-        elif params.model_name == 'ShallowNN':
+        elif params.model == 'ShallowNN':
             model = ShallowNNClassifier(
                 input_dim=n_channels * seq_length,
                 n_classes=n_classes,
                 **classifier_kwargs
             ).to(params.device)
-        elif params.model_name == 'CNN-RNN':
+        elif params.model == 'CNN-RNN':
             model = CNNRNNClassifier(
                 input_channels=n_channels,
                 input_length=seq_length,
                 n_classes=n_classes,
                 **classifier_kwargs
             ).to(params.device)
-        elif params.model_name == 'CBraMod':
+        elif params.model == 'CBraMod':
             model = CBraModClassifier(
                 input_channels=n_channels,
                 input_length=seq_length,
@@ -274,7 +281,7 @@ if __name__ == '__main__':
             ).to(params.device)
         else:
             raise ValueError(
-                f"Invalid model name '{params.model_name}'. "
+                f"Invalid model name '{params.model}'. "
                 f"Choose from {model_choices}."
             )
 
