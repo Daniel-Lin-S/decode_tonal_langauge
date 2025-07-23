@@ -199,13 +199,20 @@ if __name__ == '__main__':
         except KeyError:
             raise KeyError(
                 f"Channel selection for '{params.target}_discriminative' "
-                "not found in the channel file. "
-                "Please check the channel_file or the target variable."
+                f"not found in the file {params.channel_file}. \n"
+                "Please check the channel_file or the target variable. "
                 f"Available keys in the file: {', '.join(channel_selections.keys())}"
             )
-        all_erps = all_erps[:, channels, :]
+        
+        if len(channels) == 0:
+            raise ValueError(
+                f"No channels found for '{params.target}_discriminative'. "
+                "Please check the channel file."
+            )
     else:
         channels = np.arange(0, all_erps.shape[1])
+
+    all_erps = all_erps[:, channels, :]
 
     erps_tensor = torch.tensor(
         all_erps, dtype=torch.float32).to(params.device)

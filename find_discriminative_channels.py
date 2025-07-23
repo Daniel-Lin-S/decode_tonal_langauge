@@ -192,9 +192,7 @@ if args.figure_dir:
         for i, significant_channels in enumerate(channel_data.values()):
             label_name = args.label_names[i]
 
-            # limit the number of channels to plot
-            n_channels = len(significant_channels)
-            for j, ch in enumerate(n_channels):
+            for j, ch in enumerate(significant_channels):
                 figure_name = '{}_channel_{}.png'.format(label_name, ch)
                 figure_path = os.path.join(args.figure_dir, figure_name)
 

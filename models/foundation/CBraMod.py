@@ -38,6 +38,13 @@ class CBraMod(nn.Module):
         Forward pass of the model.
         Takes an input tensor and applies patch embedding,
         transformer encoding, and projection to output.
+
+    Reference
+    ---------
+    Wang, J., Zhao, S., Luo, Z., Zhou, Y., Jiang, H., Li, S., Li, T., & Pan, G. (2025).
+    CBraMod: A Criss-Cross Brain Foundation Model for EEG Decoding.
+    In Proceedings of the Thirteenth International Conference on Learning Representations (ICLR).
+    https://openreview.net/forum?id=NPNUHgHF2w
     """
     def __init__(
             self, in_dim: int=200, out_dim: int=200,
