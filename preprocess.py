@@ -125,9 +125,20 @@ for dir in os.listdir(args.tdt_dir):
     ecog_down = downsample(data, ecog_freq, freq)
 
     if freq_ranges is not None:
-        ecog_filtered = hilbert_filter(
-            ecog_down, freq, freq_ranges=freq_ranges
-        )
+        all_envelopes = []
+
+        for freq_range in freq_ranges:
+            if len(freq_range) != 2:
+                raise ValueError(
+                    "Each frequency range must have exactly two elements."
+                )
+
+            envelopes = hilbert_filter(
+                ecog_down, freq, freq_ranges=[freq_range]
+            )
+            all_envelopes.append(envelopes)
+
+        ecog_filtered = np.concatenate(all_envelopes, axis=0)  # concatenate in channel dimension
     else:
         ecog_filtered = ecog_down
 
