@@ -21,7 +21,8 @@ import os
 import tdt
 from data_loading.preprocessing import (
     hilbert_filter, downsample,
-    zscore, rereference
+    zscore, rereference,
+    bandpass_filter
 )
 import json
 import numpy as np
@@ -62,6 +63,10 @@ parser.add_argument(
 parser.add_argument(
     '--rereference_interval', default=(0, 1), type=float, nargs=2,
     help='Interval (in seconds) for rereferencing the ECoG data.'
+)
+parser.add_argument(
+    '--envelope', action='store_true',
+    help='If set, apply Hilbert filter to extract high gamma activity.'
 )
 
 
@@ -125,7 +130,7 @@ for dir in os.listdir(args.tdt_dir):
     ecog_down = downsample(data, ecog_freq, freq)
 
     if freq_ranges is not None:
-        all_envelopes = []
+        all_channels = []
 
         for freq_range in freq_ranges:
             if len(freq_range) != 2:
@@ -133,12 +138,21 @@ for dir in os.listdir(args.tdt_dir):
                     "Each frequency range must have exactly two elements."
                 )
 
-            envelopes = hilbert_filter(
-                ecog_down, freq, freq_ranges=[freq_range]
-            )
-            all_envelopes.append(envelopes)
+            if args.envelope:
+                signals = hilbert_filter(
+                    ecog_down, freq, freq_ranges=[freq_range]
+                )
+            else:
+                signals = bandpass_filter(
+                    ecog_down,
+                    lowcut=freq_range[0], highcut=freq_range[1],
+                    fs=freq
+                )
+            all_channels.append(signals)
 
-        ecog_filtered = np.concatenate(all_envelopes, axis=0)  # concatenate in channel dimension
+        ecog_filtered = np.concatenate(
+            all_channels, axis=0)  # concatenate in channel dimension
+
     else:
         ecog_filtered = ecog_down
 
