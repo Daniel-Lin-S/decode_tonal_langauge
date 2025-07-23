@@ -21,7 +21,7 @@ import numpy as np
 import json
 import pandas as pd
 
-from models.classifierTrainer import ClassifierTrainer
+from models.classifier_trainer import ClassifierTrainer
 from models.simple_classifiers import LogisticRegressionClassifier, ShallowNNClassifier
 from models.deep_classifiers import CNNClassifier, CNNRNNClassifier
 from models.cbramod_classifier import CBraModClassifier
