@@ -8,12 +8,11 @@ Preprocessing pipeline:
 
 Required hyper-parameters from the JSON file:
 - freq_ranges: a list of lists, each list should have length 2 indicating the
-  lower and higher bounds of the frequency band.
+  lower and higher bounds of the frequency band, e.g. [[0.3, 17], [70, 150]]
   All frequency bands will be extracted by a Hilbert filter.
-  default value: [[70, 150]] (high gamma frequency range)
+  Note: if not provided, Hilbert filter will not be applied.
 - freq_band: str, a marker for the freq_ranges, will be used to identify the .npz
   files extracted.
-  default value: 'hga'
 """
 
 
@@ -54,10 +53,6 @@ parser.add_argument(
 )
 # ------- Preprocess Settings ---------
 parser.add_argument(
-    '--downsample_freq', default=400, type=int,
-    help='Target sampling frequency of ECoG data after downsampling.'
-)
-parser.add_argument(
     '--normalisation', default='rereference', type=str,
     choices=['zscore', 'rereference'],
     help='Normalisation method to apply to the ECoG data.'
@@ -75,8 +70,9 @@ args = parser.parse_args()
 with open(args.config_file, 'r') as f:
     config = json.load(f)
 
-freq_ranges = config.get('freq_ranges', [[70, 150]])
-freq_band = config.get('freq_band', 'hga')
+freq_ranges = config.get('freq_ranges', None)
+freq_band = config.get('freq_band', None)
+freq = config.get('downsample_freq', 400)
 
 if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
@@ -92,10 +88,16 @@ for dir in os.listdir(args.tdt_dir):
         )
         continue
 
-    ecog_file = os.path.join(
-        args.output_dir,
-        f'HS{args.subject_id}_B{block_id}_ecog_{freq_band}_{args.downsample_freq}Hz.npz'
-    )
+    if freq_ranges is not None:
+        if freq_band is None:
+            raise ValueError(
+                "freq_band must be specified when freq_ranges is provided."
+            )
+        file_name = f'HS{args.subject_id}_B{block_id}_ecog_{freq_band}_{freq}Hz.npz'
+    else:
+        file_name = f'HS{args.subject_id}_B{block_id}_ecog_{freq}Hz.npz'
+
+    ecog_file = os.path.join(args.output_dir, file_name)
 
     audio_file = os.path.join(
         args.output_dir, f'HS{args.subject_id}_B{block_id}_sound.npz'
@@ -120,24 +122,29 @@ for dir in os.listdir(args.tdt_dir):
 
     audio = audio[:1, :]   # mono-channel audio
 
-    ecog_down = downsample(data, ecog_freq, args.downsample_freq)
+    ecog_down = downsample(data, ecog_freq, freq)
 
-    ecog_filtered = hilbert_filter(
-        ecog_down, args.downsample_freq, freq_ranges=freq_ranges)
+    if freq_ranges is not None:
+        ecog_filtered = hilbert_filter(
+            ecog_down, freq, freq_ranges=freq_ranges
+        )
+    else:
+        ecog_filtered = ecog_down
 
     if args.normalisation == 'zscore':
         ecog_normalised = zscore(ecog_filtered)
     elif args.normalisation == 'rereference':
         start, end = args.rereference_interval
-        start_sample = int(start * args.downsample_freq)
-        end_sample = int(end * args.downsample_freq)
+        start_sample = int(start * freq)
+        end_sample = int(end * freq)
         ecog_normalised = rereference(
-            ecog_filtered, (start_sample, end_sample))
+            ecog_filtered, (start_sample, end_sample)
+        )
     else:
         raise ValueError("Invalid normalisation method specified.")
 
     if not os.path.exists(ecog_file):
-        np.savez(ecog_file, data=ecog_normalised, sf=args.downsample_freq)
+        np.savez(ecog_file, data=ecog_normalised, sf=freq)
         print('Saved ECoG data to:', ecog_file)
     else:
         print('ECoG data already exists:', ecog_file)
