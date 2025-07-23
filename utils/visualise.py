@@ -481,7 +481,8 @@ def plot_metric(
         chance_line: Optional[float] = None,
         plot_model_size: bool=True,
         model_name_map: Optional[dict] = None,
-        legend_offset: float=0.2
+        legend_offset: float=0.2,
+        models_to_plot: Optional[List[str]] = None
     ) -> None:
     """
     Generalized function to plot a metric (e.g., accuracy or F1 score) comparison
@@ -513,12 +514,19 @@ def plot_metric(
         If None, the original model names will be used.
     legend_offset : float, optional
         Use a larger value if the captions in your legend are longer.
+    models_to_plot : List[str], optional
+        If provided, only these models will be plotted.
+        If None, all models in the DataFrame will be plotted.
     """
     if plot_model_size and 'model_size' not in data.columns:
         raise ValueError(
             "When plot_model_size is True, "
             "'model_size' must be a column in the DataFrame."
         )
+
+    # filter models
+    if models_to_plot is not None:
+        data = data[data['model_name'].isin(models_to_plot)].copy()
 
     metric_mean = f"{metric}_mean"  # Mean column name
     metric_std = f"{metric}_std"  # Standard deviation column name

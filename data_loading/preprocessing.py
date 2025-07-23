@@ -1,8 +1,9 @@
 import math
 import numpy as np
-from scipy.fft import fft, ifft
 from typing import Tuple, List
 from scipy import signal
+from scipy.signal import butter, filtfilt
+from scipy.fft import fft, ifft
 
 
 def hilbert_filter(
@@ -104,6 +105,45 @@ def hilbert_filter(
 
     # Mean envelope over bands
     return filtered_signal.mean(axis=2)
+
+
+def bandpass_filter(
+        data: np.ndarray,
+        lowcut: float, highcut: float,
+        fs: float,
+        order: int=4
+    ) -> np.ndarray:
+    """
+    Apply a bandpass filter to the data.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The input data to be filtered.
+        Of shape (n_channels, n_samples) or (n_samples,).
+    lowcut : float
+        The low cutoff frequency of the filter in Hz.
+    highcut : float
+        The high cutoff frequency of the filter in Hz.
+    fs : float
+        The sampling frequency of the data in Hz.
+    order : int, optional
+        The order of the Butterworth filter. Default is 4.
+
+    Returns
+    -------
+    np.ndarray
+        The filtered data of the same shape as `data`.
+        If `data` is 2D, the output will also be 2D.
+        If `data` is 1D, the output will be 1D.
+    """
+    nyquist = 0.5 * fs
+    low = lowcut / nyquist
+    high = highcut / nyquist
+    b, a = butter(order, [low, high], btype='band')
+    filtered = filtfilt(b, a, data, axis=-1)
+
+    return filtered
 
 
 def downsample(
