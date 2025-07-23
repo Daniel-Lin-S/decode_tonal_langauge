@@ -148,6 +148,13 @@ if args.channel_output_file:
     })
 
     for label_name in args.label_names:
+        if len(discriminative_powers[label_name]) != len(channel_locations):
+            raise ValueError(
+                f"Discriminative powers for label '{label_name}' "
+                f"do not match the number of electrodes. "
+                f"Expected {len(channel_locations)}, got "
+                f"{len(discriminative_powers[label_name])}."
+            )
         df[f'{label_name}_discriminative_score'] = discriminative_powers[label_name]
 
     df.to_csv(args.channel_output_file, index=True)

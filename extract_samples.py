@@ -72,6 +72,10 @@ parser.add_argument(
     help='List of block numbers to process. If None, all blocks will be processed.'
     'This is useful when there are trial blocks irrelevant to the current experiments. '
 )
+parser.add_argument(
+    '--overwrite', action='store_true',
+    help='If set, will overwrite the output file if it already exists.'
+)
 
 
 args = parser.parse_args()
@@ -91,7 +95,7 @@ if __name__ == '__main__':
     syllable_identifiers = config['syllable_identifiers']
     rest_period = tuple(config['rest_period'])
 
-    if os.path.exists(args.output_path):
+    if os.path.exists(args.output_path) and not args.overwrite:
         print(f"Output file {args.output_path} already exists. "
               "Skipping ...")
         exit(1)

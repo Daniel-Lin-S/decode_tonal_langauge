@@ -20,6 +20,7 @@ import os
 import numpy as np
 import json
 import pandas as pd
+from typing import Tuple
 
 from models.classifier_trainer import ClassifierTrainer
 from models.simple_classifiers import LogisticRegressionClassifier, ShallowNNClassifier
@@ -33,6 +34,9 @@ from data_loading.dataloaders import split_dataset
 
 parser = argparse.ArgumentParser(
     description="Train a classifier on ECoG data.")
+
+
+model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN', 'CBraMod']
 
 # ----- I/O -------
 parser.add_argument(
@@ -67,8 +71,8 @@ parser.add_argument(
 )
 parser.add_argument(
     '--model', type=str, required=True,
-    help='The classification to be used'
-    ' Options: ["logistic", "CNN", "CNN-RNN", "ShallowNN"]'
+    choices=model_choices,
+    help='The classification model to be used.'
 )
 parser.add_argument(
     '--model_name', type=str, required=True,
@@ -129,46 +133,29 @@ parser.add_argument(
 )
 
 
-model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN', 'CBraMod']
+def prepare_erps(
+        params: argparse.Namespace
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load the ECoG dataset and prepare the ERPs and labels for training.
 
-if __name__ == '__main__':
-    params = parser.parse_args()
-
-    # ------ Value checks -------
-    if 'cuda' in params.device and not torch.cuda.is_available():
-        raise RuntimeError(
-            "CUDA is not available. Please use 'cpu' as device.")
-
-    if params.train_ratio + params.vali_ratio + params.test_ratio != 1.0:
-        raise ValueError(
-            "The sum of train_ratio, vali_ratio, and test_ratio must be 1.0. "
-            f"Current values: train_ratio={params.train_ratio}, "
-            f"vali_ratio={params.vali_ratio}, test_ratio={params.test_ratio}")
+    Parameters
+    ----------
+    params : argparse.Namespace
+        The parameters containing the paths and settings for loading the dataset.
+        - sample_path : str, path to the npz file containing the ECoG samples.
+        - target : str, the target variable to classify (e.g., 'syllable', 'tone').
+        - channel_file : str, path to the JSON file containing channel selections.
     
-    if not os.path.exists(params.sample_path):
-        raise FileNotFoundError(
-            f"Data file '{params.sample_path}' does not exist.")
-
-    # ------- Load configuration file -------
-    with open(params.config_file, 'r') as f:
-        config = json.load(f)
-    
-    syllable_labels = config.get('syllable_labels')
-    classifier_kwargs = config.get(f'{params.target}_model_kwargs', {})
-
-    # ------- Create directories if they do not exist -------
-    if not os.path.exists(params.figure_dir):
-        os.makedirs(params.figure_dir)
-
-    if params.model_dir is not None and not os.path.exists(params.model_dir):
-        os.makedirs(params.model_dir)
-
-    results_dir = os.path.dirname(params.result_file)
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
-
-    # ------- Prepare dataset -------
-
+    Returns
+    -------
+    all_erps : np.ndarray
+        The ECoG data with shape (n_samples, n_channels, n_timepoints).
+    labels : np.ndarray
+        The labels corresponding to the ECoG data with shape (n_samples,).
+    channels : np.ndarray
+        The indices of the channels used for training, based on the channel file.
+    """
     dataset = np.load(params.sample_path)
 
     try:
@@ -213,6 +200,48 @@ if __name__ == '__main__':
         channels = np.arange(0, all_erps.shape[1])
 
     all_erps = all_erps[:, channels, :]
+
+    return all_erps, labels, channels
+
+if __name__ == '__main__':
+    params = parser.parse_args()
+
+    # ------ Value checks -------
+    if 'cuda' in params.device and not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is not available. Please use 'cpu' as device.")
+
+    if params.train_ratio + params.vali_ratio + params.test_ratio != 1.0:
+        raise ValueError(
+            "The sum of train_ratio, vali_ratio, and test_ratio must be 1.0. "
+            f"Current values: train_ratio={params.train_ratio}, "
+            f"vali_ratio={params.vali_ratio}, test_ratio={params.test_ratio}")
+    
+    if not os.path.exists(params.sample_path):
+        raise FileNotFoundError(
+            f"Data file '{params.sample_path}' does not exist.")
+
+    # ------- Load configuration file -------
+    with open(params.config_file, 'r') as f:
+        config = json.load(f)
+    
+    syllable_labels = config.get('syllable_labels')
+    classifier_kwargs = config.get(f'{params.target}_model_kwargs', {})
+
+    # ------- Create directories if they do not exist -------
+    if not os.path.exists(params.figure_dir):
+        os.makedirs(params.figure_dir)
+
+    if params.model_dir is not None and not os.path.exists(params.model_dir):
+        os.makedirs(params.model_dir)
+
+    results_dir = os.path.dirname(params.result_file)
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+
+    # ------- Prepare dataset -------
+
+    all_erps, labels, channels = prepare_erps(params)
 
     erps_tensor = torch.tensor(
         all_erps, dtype=torch.float32).to(params.device)
