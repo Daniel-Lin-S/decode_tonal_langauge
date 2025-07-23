@@ -8,7 +8,7 @@ from typing import Tuple, List, Dict
 from data_loading.utils import prepare_tone_dynamics
 
 from models.classifier import ClassifierModel
-from models.synthesisModels import SynthesisModel
+from models.synthesis_models import SynthesisModel
 
 
 def compute_mcd(true_mcc: torch.Tensor, pred_mcc: torch.Tensor) -> float:
