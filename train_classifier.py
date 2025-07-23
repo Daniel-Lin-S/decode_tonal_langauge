@@ -20,6 +20,7 @@ import os
 import numpy as np
 import json
 import pandas as pd
+from typing import Tuple
 
 from models.classifier_trainer import ClassifierTrainer
 from models.simple_classifiers import LogisticRegressionClassifier, ShallowNNClassifier
@@ -32,6 +33,9 @@ from data_loading.dataloaders import split_dataset
 
 parser = argparse.ArgumentParser(
     description="Train a classifier on ECoG data.")
+
+
+model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN']
 
 # ----- I/O -------
 parser.add_argument(
@@ -66,8 +70,8 @@ parser.add_argument(
 )
 parser.add_argument(
     '--model', type=str, required=True,
-    help='The classification to be used'
-    ' Options: ["logistic", "CNN", "CNN-RNN", "ShallowNN"]'
+    choices=model_choices,
+    help='The classification model to be used.'
 )
 parser.add_argument(
     '--model_name', type=str, required=True,
@@ -124,7 +128,75 @@ parser.add_argument(
 )
 
 
-model_choices = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN']
+def prepare_erps(
+        params: argparse.Namespace
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load the ECoG dataset and prepare the ERPs and labels for training.
+
+    Parameters
+    ----------
+    params : argparse.Namespace
+        The parameters containing the paths and settings for loading the dataset.
+        - sample_path : str, path to the npz file containing the ECoG samples.
+        - target : str, the target variable to classify (e.g., 'syllable', 'tone').
+        - channel_file : str, path to the JSON file containing channel selections.
+    
+    Returns
+    -------
+    all_erps : np.ndarray
+        The ECoG data with shape (n_samples, n_channels, n_timepoints).
+    labels : np.ndarray
+        The labels corresponding to the ECoG data with shape (n_samples,).
+    channels : np.ndarray
+        The indices of the channels used for training, based on the channel file.
+    """
+    dataset = np.load(params.sample_path)
+
+    try:
+        all_erps = dataset['ecog']
+    except KeyError:
+        raise KeyError(
+            "The dataset does not contain 'ecog' key. "
+            "Please check the data file. "
+            f"Available keys in the file: {', '.join(dataset.keys())}"
+        )
+
+    try:
+        labels = dataset[f'{params.target}'].flatten()
+    except:
+        raise KeyError(
+            f"The dataset does not contain '{params.target}' key. "
+            "Please check the data file. "
+            f"Available keys in the file: {', '.join(dataset.keys())}"
+        )
+
+    # ------ filter channels -------
+    if params.channel_file is not None:
+        with open(params.channel_file, 'r') as f:
+            channel_selections = json.load(f)
+
+        try:
+            channels = channel_selections[f'{params.target}_discriminative']
+        except KeyError:
+            raise KeyError(
+                f"Channel selection for '{params.target}_discriminative' "
+                f"not found in the file {params.channel_file}. \n"
+                "Please check the channel_file or the target variable. "
+                f"Available keys in the file: {', '.join(channel_selections.keys())}"
+            )
+        
+        if len(channels) == 0:
+            raise ValueError(
+                f"No channels found for '{params.target}_discriminative'. "
+                "Please check the channel file."
+            )
+    else:
+        channels = np.arange(0, all_erps.shape[1])
+
+    all_erps = all_erps[:, channels, :]
+
+    return all_erps, labels, channels
 
 if __name__ == '__main__':
     params = parser.parse_args()
@@ -164,43 +236,7 @@ if __name__ == '__main__':
 
     # ------- Prepare dataset -------
 
-    dataset = np.load(params.sample_path)
-
-    try:
-        all_erps = dataset['ecog']
-    except KeyError:
-        raise KeyError(
-            "The dataset does not contain 'ecog' key. "
-            "Please check the data file. "
-            f"Available keys in the file: {', '.join(dataset.keys())}"
-        )
-
-    try:
-        labels = dataset[f'{params.target}'].flatten()
-    except:
-        raise KeyError(
-            f"The dataset does not contain '{params.target}' key. "
-            "Please check the data file. "
-            f"Available keys in the file: {', '.join(dataset.keys())}"
-        )
-
-    # ------ filter channels -------
-    if params.channel_file is not None:
-        with open(params.channel_file, 'r') as f:
-            channel_selections = json.load(f)
-
-        try:
-            channels = channel_selections[f'{params.target}_discriminative']
-        except KeyError:
-            raise KeyError(
-                f"Channel selection for '{params.target}_discriminative' "
-                "not found in the channel file. "
-                "Please check the channel_file or the target variable."
-                f"Available keys in the file: {', '.join(channel_selections.keys())}"
-            )
-        all_erps = all_erps[:, channels, :]
-    else:
-        channels = np.arange(0, all_erps.shape[1])
+    all_erps, labels, channels = prepare_erps(params)
 
     erps_tensor = torch.tensor(
         all_erps, dtype=torch.float32).to(params.device)
