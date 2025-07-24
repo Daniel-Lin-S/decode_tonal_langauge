@@ -9,7 +9,9 @@ Preprocessing pipeline:
 Required hyper-parameters from the JSON file:
 - freq_ranges: a list of lists, each list should have length 2 indicating the
   lower and higher bounds of the frequency band, e.g. [[0.3, 17], [70, 150]]
-  All frequency bands will be extracted by a Hilbert filter.
+  Warning: using more than one frequency band results in more channels,
+  each band is extracted by a different filter and z-scored separately.
+  e.g. 2 bands gives double number of channels.
   Note: if not provided, Hilbert filter will not be applied.
 - freq_band: str, a marker for the freq_ranges, will be used to identify the .npz
   files extracted.

@@ -31,7 +31,7 @@ def split_dataset(
 
     Returns
     -------
-    List[DataLoader]
+    List[torch.utils.data.DataLoader]
         A list of DataLoaders for each subset of the dataset.
     """
     # set seed
