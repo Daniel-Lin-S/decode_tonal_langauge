@@ -8,9 +8,11 @@ Each sample corresponds to a trial in the experiment.
 Required hyper-parameters from the JSON file:
 - syllable_labels: a list of syllable labels, used for visualising the classification results.
   For example, ["ba", "da"] will map label 0 to "ba" and label 1 to "da".
-- [target]_model_kwargs : a dictionary of keyword arguments for the model.
-  e.g. 'tone_model_kwargs': {'hidden_dim': 128}. Please refer to the model's documentation
-for available parameters.
+  If not provided, the labels will be numbered from 1 to n_classes.
+- tone_labels: a list of tone labels, used for visualising the classification results.
+  If not provided, the labels will be numbered from 1 to n_classes.
+- classifier_kwargs: a dictionary of keyword arguments for the classifier.
+  If not given, the default values will be used.
 """
 
 import argparse
@@ -20,14 +22,16 @@ import os
 import numpy as np
 import json
 import pandas as pd
-from typing import Tuple
+from typing import Tuple, Dict, List, Optional
 
 from models.classifier_trainer import ClassifierTrainer
 from models.simple_classifiers import LogisticRegressionClassifier, ShallowNNClassifier
 from models.deep_classifiers import CNNClassifier, CNNRNNClassifier
+from models.classifier import ClassifierModel
 from models.cbramod_classifier import CBraModClassifier
-from utils.utils import set_seeds
+from utils.utils import set_seeds, prepare_class_labels
 from utils.visualise import plot_training_losses, plot_confusion_matrix
+from utils.metrics import compute_joint_metrics
 
 from data_loading.dataloaders import split_dataset
 
@@ -84,9 +88,13 @@ parser.add_argument(
 )
 # ----- Experiment Settings -------
 parser.add_argument(
-    '--target', type=str, required=True,
+    '--targets', type=str, required=True, nargs='+',
+    choices=["syllable", "tone"],
     help='The target variable to classify. '
-    'Options: ["syllables", "tones"]'
+)
+parser.add_argument(
+    '--separate_models', action='store_true',
+    help='If set, train separate models for each target. ' \
 )
 parser.add_argument(
     '--seed', type=int, default=42,
@@ -134,19 +142,23 @@ parser.add_argument(
 
 
 def prepare_erps(
-        params: argparse.Namespace
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    sample_path: str,
+    targets: List[str],
+    channel_file: Optional[str] = None
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, int]]:
     """
     Load the ECoG dataset and prepare the ERPs and labels for training.
 
     Parameters
     ----------
-    params : argparse.Namespace
-        The parameters containing the paths and settings for loading the dataset.
-        - sample_path : str, path to the npz file containing the ECoG samples.
-        - target : str, the target variable to classify (e.g., 'syllable', 'tone').
-        - channel_file : str, path to the JSON file containing channel selections.
-    
+    sample_path : str
+        Path to the npz file containing the samples.
+    targets : List[str]
+        List of target variables to classify, e.g. ["syllable", "tone"].
+    channel_file : Optional[str], default=None
+        Path to the JSON file containing channel selections for the model.
+        If None, all channels will be used.
+
     Returns
     -------
     all_erps : np.ndarray
@@ -155,8 +167,11 @@ def prepare_erps(
         The labels corresponding to the ECoG data with shape (n_samples,).
     channels : np.ndarray
         The indices of the channels used for training, based on the channel file.
+    n_classes_dict : Dict[str, int]
+        A dictionary mapping each target to the
+        number of unique classes in that target.
     """
-    dataset = np.load(params.sample_path)
+    dataset = np.load(sample_path)
 
     try:
         all_erps = dataset['ecog']
@@ -167,33 +182,50 @@ def prepare_erps(
             f"Available keys in the file: {', '.join(dataset.keys())}"
         )
 
-    try:
-        labels = dataset[f'{params.target}'].flatten()
-    except:
-        raise KeyError(
-            f"The dataset does not contain '{params.target}' key. "
-            "Please check the data file. "
-            f"Available keys in the file: {', '.join(dataset.keys())}"
-        )
+    target_labels = []
+    n_classes_dict = {}
+    for target in targets:
+        if target not in dataset:
+            raise KeyError(
+                f"The dataset does not contain '{target}' key. "
+                "Please check the data file. "
+                f"Available keys in the file: {', '.join(dataset.keys())}"
+            )
+
+        target_labels.append(dataset[target].flatten())
+        n_classes_dict[target] = len(np.unique(dataset[target]))
+
+    # combine target labels into a single label array
+    labels = np.zeros_like(target_labels[0], dtype=int)
+    multiplier = 1
+    for target_label in target_labels:
+        labels += target_label * multiplier
+        multiplier *= len(np.unique(target_label))
 
     # ------ filter channels -------
-    if params.channel_file is not None:
-        with open(params.channel_file, 'r') as f:
+    if channel_file is not None:
+        with open(channel_file, 'r') as f:
             channel_selections = json.load(f)
 
-        try:
-            channels = channel_selections[f'{params.target}_discriminative']
-        except KeyError:
-            raise KeyError(
-                f"Channel selection for '{params.target}_discriminative' "
-                f"not found in the file {params.channel_file}. \n"
-                "Please check the channel_file or the target variable. "
-                f"Available keys in the file: {', '.join(channel_selections.keys())}"
-            )
-        
+        channels = set()
+
+        # Loop through all targets and union their discriminative channels
+        for target in targets:
+            if f'{target}_discriminative' not in channel_selections:
+                raise KeyError(
+                    f"Channel selection for '{target}_discriminative' "
+                    f"not found in the file {channel_file}. \n"
+                    "Please check the channel_file or the target variable. "
+                    f"Available keys in the file: {', '.join(channel_selections.keys())}"
+                )
+            channels.update(channel_selections[f'{target}_discriminative'])
+
+        # Convert the set back to a sorted list
+        channels = sorted(channels)
+
         if len(channels) == 0:
             raise ValueError(
-                f"No channels found for '{params.target}_discriminative'. "
+                f"No channels found for the targets: {', '.join(targets)}. "
                 "Please check the channel file."
             )
     else:
@@ -201,7 +233,82 @@ def prepare_erps(
 
     all_erps = all_erps[:, channels, :]
 
-    return all_erps, labels, channels
+    return all_erps, labels, channels, n_classes_dict
+
+
+def build_classifier(
+        params: argparse.Namespace,
+        n_classes: int,
+        n_channels: int,
+        seq_length: int,
+        classifier_kwargs: dict={}
+    ) -> ClassifierModel:
+    """
+    Build the classifier model based on the specified parameters.
+
+    Parameters
+    ----------
+    params : argparse.Namespace
+        The parameters parsed from the command line.
+    n_classes : int
+        The number of classes for classification.
+    n_channels : int
+        The number of channels in the input data.
+    seq_length : int
+        The length of the input sequence (number of timepoints).
+    classifier_kwargs : dict, optional
+        Additional keyword arguments for the classifier model.
+        Default is an empty dictionary.
+    
+    Return
+    ------
+    ClassifierModel
+        The classifier model (nn.Module) built.
+    """
+
+    if params.model == 'logistic':
+        model = LogisticRegressionClassifier(
+                    input_dim=n_channels * seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+    elif params.model == 'CNN':
+        model = CNNClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+    elif params.model == 'ShallowNN':
+        model = ShallowNNClassifier(
+                    input_dim=n_channels * seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+    elif params.model == 'CNN-RNN':
+        model = CNNRNNClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    **classifier_kwargs
+                ).to(params.device)
+    elif params.model == 'CBraMod':
+        model = CBraModClassifier(
+                    input_channels=n_channels,
+                    input_length=seq_length,
+                    n_classes=n_classes,
+                    pretrained_weights_path=params.foundation_weights_path,
+                    device=params.device,
+                    **classifier_kwargs
+                ).to(params.device)
+    else:
+        raise ValueError(
+                    f"Invalid model name '{params.model}'. "
+                    f"Choose from {model_choices}."
+                )
+        
+    return model
+
 
 if __name__ == '__main__':
     params = parser.parse_args()
@@ -225,8 +332,9 @@ if __name__ == '__main__':
     with open(params.config_file, 'r') as f:
         config = json.load(f)
     
-    syllable_labels = config.get('syllable_labels')
-    classifier_kwargs = config.get(f'{params.target}_model_kwargs', {})
+    syllable_labels = config.get('syllable_labels', None)
+    tone_labels = config.get('tone_labels', None)
+    classifier_kwargs = config.get(f'classifier_kwargs', {})
 
     # ------- Create directories if they do not exist -------
     if not os.path.exists(params.figure_dir):
@@ -239,130 +347,261 @@ if __name__ == '__main__':
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
-    # ------- Prepare dataset -------
-
-    all_erps, labels, channels = prepare_erps(params)
-
-    erps_tensor = torch.tensor(
-        all_erps, dtype=torch.float32).to(params.device)
-    labels_tensor = torch.tensor(
-        labels, dtype=torch.float32).to(params.device)
-
-    dataset_tensor = TensorDataset(erps_tensor, labels_tensor)
-    n_samples, n_channels, seq_length = erps_tensor.shape
-
-    if params.verbose > 0:
-        print(f"Prepared {n_samples} samples with shape {erps_tensor.shape}"
-              f" and labels with shape {labels_tensor.shape}")
-
-    n_classes = len(np.unique(labels))
-
-    # ------- Start experiments -------
     np.random.seed(params.seed)
     seeds = np.random.randint(0, 10000, params.repeat)
 
-    accuracies = []
-    f1_scores = []
-    train_losses = []
-    vali_losses = []
-    confusion_mat = np.zeros((n_classes, n_classes))
+    if params.separate_models:
+        # train separate models for each target
+        # and compute the overall accuracy
 
-    for i, seed in enumerate(seeds):
-        set_seeds(seed)
-
-        data_loaders = split_dataset(
-            dataset_tensor, 
-            [params.train_ratio, params.vali_ratio, params.test_ratio],
-            shuffling=[True, False, False],
-            batch_size=params.batch_size,
-            seed=seed
+        class_labels = prepare_class_labels(
+            params.targets,
+            class_label_dict = {
+                'syllable' : syllable_labels,
+                'tone' : tone_labels
+            }
         )
 
-        trainer_verbose = params.verbose > 1
+        all_datasets = {}
+        input_shapes = {}
+        channels = set()
+        n_classes_dict = {}
 
-        if params.model == 'logistic':
-            model = LogisticRegressionClassifier(
-                input_dim=n_channels * seq_length,
-                n_classes=n_classes,
-                **classifier_kwargs
-            ).to(params.device)
-        elif params.model == 'CNN':
-            model = CNNClassifier(
-                input_channels=n_channels,
-                input_length=seq_length,
-                n_classes=n_classes,
-                **classifier_kwargs
-            ).to(params.device)
-        elif params.model == 'ShallowNN':
-            model = ShallowNNClassifier(
-                input_dim=n_channels * seq_length,
-                n_classes=n_classes,
-                **classifier_kwargs
-            ).to(params.device)
-        elif params.model == 'CNN-RNN':
-            model = CNNRNNClassifier(
-                input_channels=n_channels,
-                input_length=seq_length,
-                n_classes=n_classes,
-                **classifier_kwargs
-            ).to(params.device)
-        elif params.model == 'CBraMod':
-            model = CBraModClassifier(
-                input_channels=n_channels,
-                input_length=seq_length,
-                n_classes=n_classes,
-                pretrained_weights_path=params.foundation_weights_path,
-                device=params.device,
-                **classifier_kwargs
-            ).to(params.device)
-        else:
-            raise ValueError(
-                f"Invalid model name '{params.model}'. "
-                f"Choose from {model_choices}."
+        # ------- Prepare dataset -------
+        for target in params.targets:
+            all_erps, labels, channels_target, n_classes_target = prepare_erps(
+                params.sample_path, [target], params.channel_file
+            )
+            n_classes_dict[target] = n_classes_target[target]
+
+            channels.update(channels_target)
+
+            erps_tensor = torch.tensor(
+                all_erps, dtype=torch.float32).to(params.device)
+            labels_tensor = torch.tensor(
+                labels, dtype=torch.float32).to(params.device)
+
+            dataset_tensor = TensorDataset(erps_tensor, labels_tensor)
+
+            all_datasets[target] = dataset_tensor        
+
+            input_shapes[target] = erps_tensor.shape[1:]
+
+            if params.verbose > 0:
+                print(f"Prepared {input_shapes[target][1]} samples with shape {erps_tensor.shape}"
+                    f" and {target} labels with shape {labels_tensor.shape}")
+
+        n_classes = 1
+        for target, n_classes_target in n_classes_dict.items():
+            n_classes *= n_classes_target
+
+        # ------- Start experiments -------
+        accuracies = []
+        f1_scores = []
+        confusion_mat = np.zeros((n_classes, n_classes))
+        all_train_losses = {}
+        all_vali_losses = {}
+        all_confusion_mats = {}
+
+        for i, seed in enumerate(seeds):
+            set_seeds(seed)
+
+            all_preds = {}   # predicted labels
+            all_true = {}    # true labels
+
+            model_size = 0
+            for target, dataset_tensor in all_datasets.items():
+                if params.verbose > 0:
+                    print(f"Training for target: {target} with seed {seed}...")
+                data_loaders = split_dataset(
+                    dataset_tensor, 
+                    [params.train_ratio, params.vali_ratio, params.test_ratio],
+                    shuffling=[True, False, False],
+                    batch_size=params.batch_size,
+                    seed=seed
+                )
+
+                # extract true labels
+                all_true[target] = []
+                for batch in data_loaders[2]:
+                    _, labels = batch
+                    all_true[target].append(labels.cpu().numpy())
+
+                # Concatenate all true labels into a single array
+                all_true[target] = np.concatenate(all_true[target])
+
+                trainer_verbose = params.verbose > 1
+
+                model = build_classifier(
+                    params, n_classes_dict[target],
+                    input_shapes[target][0], input_shapes[target][1],
+                    classifier_kwargs=classifier_kwargs
+                )
+                model_size += model.get_nparams()
+
+                model_verbose = params.verbose > 0 and i == 0
+                if model_verbose:
+                    print(
+                        f"Number of trainable parameters: {model.get_layer_nparams()}"
+                    )
+
+                trainer = ClassifierTrainer(
+                    model, device=params.device,
+                    learning_rate=params.lr,
+                    verbose=model_verbose
+                )
+
+                if params.verbose > 0:
+                    print(f"Training {target} model with seed {seed} ...")
+
+                history = trainer.train(
+                    data_loaders[0], epochs=params.epochs,
+                    vali_loader=data_loaders[1],
+                    patience=params.patience,
+                    verbose=trainer_verbose
+                )
+
+                # save the model
+                if params.model_dir is not None:
+                    model_save_path = os.path.join(
+                        params.model_dir, f"{target}_{params.model_name}_seed_{seed}.pt"
+                    )
+                    
+                    torch.save(model.state_dict(), model_save_path)
+                    
+                    if params.verbose > 0:
+                        print(f"Model saved to {model_save_path}")
+
+                metrics, preds = trainer.evaluate(data_loaders[2], return_preds=True)
+                all_preds[target] = preds.cpu().numpy()
+
+                if target in all_train_losses:
+                    all_train_losses[target].append(
+                        [item['train_loss'] for item in history]
+                    )
+                    all_vali_losses[target].append(
+                        [item['vali_loss'] for item in history]
+                    )
+                    all_confusion_mats[target] += metrics['confusion_matrix']
+                else:
+                    all_train_losses[target] = [
+                        [item['train_loss'] for item in history]
+                    ]
+                    all_vali_losses[target] = [
+                        [item['vali_loss'] for item in history]
+                    ]
+                    all_confusion_mats[target] = metrics['confusion_matrix']
+
+            metrics = compute_joint_metrics(
+                all_true, all_preds,
+                metrics = ['accuracy', 'f1_score', 'confusion_matrix']
+            )
+            accuracies.append(metrics['accuracy'])
+            f1_scores.append(metrics['f1_score'])
+            confusion_mat += metrics['confusion_matrix']
+
+    else:  # build a joint dataset for all targets
+        # ------- Prepare dataset -------
+
+        all_erps, labels, channels, n_classes_dict = prepare_erps(
+            params.sample_path, params.targets, params.channel_file
+        )
+
+        erps_tensor = torch.tensor(
+            all_erps, dtype=torch.float32).to(params.device)
+        labels_tensor = torch.tensor(
+            labels, dtype=torch.float32).to(params.device)
+
+        dataset_tensor = TensorDataset(erps_tensor, labels_tensor)
+        n_samples, n_channels, seq_length = erps_tensor.shape
+
+        if params.verbose > 0:
+            print(f"Prepared {n_samples} samples with shape {erps_tensor.shape}"
+                f" and labels with shape {labels_tensor.shape}")
+
+        n_classes = len(np.unique(labels))
+
+        class_labels = prepare_class_labels(
+            params.targets,
+            n_classes_dict=n_classes_dict,
+            class_label_dict = {
+                'syllable' : syllable_labels,
+                'tone' : tone_labels
+            }
+        )
+
+        print('Number of classes ', n_classes)
+
+        # ------- Start experiments -------
+        accuracies = []
+        f1_scores = []
+        train_losses = []
+        vali_losses = []
+        confusion_mat = np.zeros((n_classes, n_classes))
+
+        for i, seed in enumerate(seeds):
+            set_seeds(seed)
+
+            data_loaders = split_dataset(
+                dataset_tensor, 
+                [params.train_ratio, params.vali_ratio, params.test_ratio],
+                shuffling=[True, False, False],
+                batch_size=params.batch_size,
+                seed=seed
             )
 
-        model_verbose = params.verbose > 0 and i == 0
-        if model_verbose:
-            print(f"Number of trainable parameters: {model.get_layer_nparams()}")
+            trainer_verbose = params.verbose > 1
 
-        trainer = ClassifierTrainer(
-            model, device=params.device,
-            learning_rate=params.lr,
-            verbose=model_verbose
-        )
+            model = build_classifier(
+                model_choices, params, classifier_kwargs,
+                n_classes, n_channels, seq_length
+            )
+            model_size = model.get_nparams()
 
-        if params.verbose > 0:
-            print(f"Training with seed {seed} ...")
+            model_verbose = params.verbose > 0 and i == 0
+            if model_verbose:
+                print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
-        history = trainer.train(
-            data_loaders[0], epochs=params.epochs,
-            vali_loader=data_loaders[1],
-            patience=params.patience,
-            verbose=trainer_verbose
-        )
+            trainer = ClassifierTrainer(
+                model, device=params.device,
+                learning_rate=params.lr,
+                verbose=model_verbose
+            )
 
-        # save the model
-        if params.model_dir is not None:
-            model_save_path = os.path.join(
-                params.model_dir, f"{params.target}_{params.model_name}_seed_{seed}.pt")
-            
-            torch.save(model.state_dict(), model_save_path)
-            
             if params.verbose > 0:
-                print(f"Model saved to {model_save_path}")
+                print(f"Training with seed {seed} ...")
 
-        accuracy, f1, conf = trainer.evaluate(data_loaders[2])
-        accuracies.append(accuracy)
-        f1_scores.append(f1)
-        confusion_mat += conf
+            history = trainer.train(
+                data_loaders[0], epochs=params.epochs,
+                vali_loader=data_loaders[1],
+                patience=params.patience,
+                verbose=trainer_verbose
+            )
 
-        if params.verbose > 0:
-            print(f"Run {i+1} / {params.repeat}: "
-                  f"Test accuracy: {accuracy:.4f}, "
-                  f"F1 score: {f1:.4f}")
+            # save the model
+            if params.model_dir is not None:
+                target_str = '_'.join(params.targets) if len(params.targets) > 1 else params.targets[0]
+                model_save_path = os.path.join(
+                    params.model_dir, f"{target_str}_{params.model_name}_seed_{seed}.pt"
+                )
+                
+                torch.save(model.state_dict(), model_save_path)
+                
+                if params.verbose > 0:
+                    print(f"Model saved to {model_save_path}")
 
-        train_losses.append([item['train_loss'] for item in history])
-        vali_losses.append([item['vali_loss'] for item in history])
+            metrics = trainer.evaluate(data_loaders[2])
+            accuracies.append(metrics['accuracy'])
+            f1_scores.append(metrics['f1_score'])
+            confusion_mat += metrics['confusion_matrix']
+
+            if params.verbose > 0:
+                print(f"Run {i+1} / {params.repeat}: "
+                    f"Test accuracy: {metrics['accuracy']:.4f}, "
+                    f"F1 score: {metrics['f1_score']:.4f}")
+
+            train_losses.append([item['train_loss'] for item in history])
+            vali_losses.append([item['vali_loss'] for item in history])
 
 
     # --------- Save results ---------
@@ -378,9 +617,9 @@ if __name__ == '__main__':
     experiment_results = {
         'model_name': params.model_name,
         'model_kwargs' : str(classifier_kwargs),
-        'model_size': model.get_nparams(),
+        'model_size': model_size,
         'subject': params.subject_id,
-        'target' : params.target,
+        'target' : ','.join(params.targets),
         'electrodes': str(channels),
         'seeds' : str(seeds),
         'learning_rate' : params.lr,
@@ -392,9 +631,11 @@ if __name__ == '__main__':
         'f1_mean': np.mean(f1_scores),
         'f1_std': np.std(f1_scores),
         'all_accuracies': str(accuracies),
-        'all_f1_scores': str(f1_scores),
-        'confusion_matrix': str(confusion_mat.tolist())
+        'all_f1_scores': str(f1_scores)
     }
+
+    if not params.separate_models:
+        experiment_results['confusion_matrix'] = str(confusion_mat.tolist())
 
     results_df = pd.DataFrame([experiment_results])
 
@@ -408,21 +649,24 @@ if __name__ == '__main__':
         )
     print(f"Results saved to {params.result_file}")
 
-    plot_training_losses(
-        train_losses, vali_losses=vali_losses,
-        figure_path=os.path.join(params.figure_dir, 'training_losses.png')
-    )
+    if params.separate_models:
+        for target in params.targets:
+            plot_training_losses(
+                all_train_losses[target], vali_losses=all_vali_losses[target],
+                figure_path=os.path.join(
+                    params.figure_dir, f'training_losses_{target}.png'
+                )
+            )
+
+    else:
+        plot_training_losses(
+            train_losses, vali_losses=vali_losses,
+            figure_path=os.path.join(params.figure_dir, 'training_losses.png')
+        )
 
     # only add numbers to the confusion matrix plot
     # if classes are few to avoid visual clutter
     add_numbers = n_classes <= 10
-
-    if params.target == 'tone':
-        class_labels = np.arange(1, n_classes + 1).astype(str)
-    elif params.target == 'syllable':
-        class_labels = syllable_labels
-    else:
-        class_labels = None
 
     plot_confusion_matrix(
         confusion_mat, add_numbers, label_names=class_labels,
