@@ -265,7 +265,9 @@ class ClassifierTrainer:
         return vali_loss, vali_accuracy
 
     def evaluate(
-            self, test_loader: DataLoader
+            self,
+            test_loader: DataLoader,
+            return_preds: bool=False
         ) -> Tuple[torch.Tensor, float]:
         """
         Evaluate the model on the test dataset.
@@ -274,17 +276,20 @@ class ClassifierTrainer:
         ----------
         test_loader : DataLoader
             DataLoader for the test dataset.
+        return_preds : bool, optional
+            If True, returns the predictions along with the metrics,
+            by default False.
 
         Returns
         -------
-        accuracy : float
-            Mean accuracy of the model on the test dataset
-            across all batches.
-        f1_score : float
-            Mean F1 score of the model on the test dataset
-            across all batches.
-        confusion_matrix : np.ndarray
-            Confusion matrix of the model's predictions on the test dataset.
+        metrics : dict
+            A dictionary containing the evaluation metrics:
+            - 'accuracy': The accuracy of the model on the test dataset.
+            - 'f1_score': The F1 score of the model on the test dataset.
+            - 'confusion_matrix': The confusion matrix of the model on the test dataset.
+        If return_preds is True, also returns:
+        preds : torch.Tensor
+            Predictions made by the model on the test dataset.
         """
         self.model.eval()
 
@@ -292,12 +297,15 @@ class ClassifierTrainer:
         self.f1_metric.reset()
         self.confusion_metric.reset()
 
+        labels_pred_all = []
+
         with torch.no_grad():
             for inputs, targets in test_loader:
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
                 outputs = self.model(inputs)
                 labels_pred = outputs.argmax(dim=1)
+                labels_pred_all.append(labels_pred.cpu())
 
                 self.acc_metric.update(outputs, targets)
                 self.f1_metric.update(outputs, targets)
@@ -307,4 +315,14 @@ class ClassifierTrainer:
         f1_score = self.f1_metric.compute().item()
         confusion_matrix = self.confusion_metric.compute().cpu().numpy()
 
-        return accuracy, f1_score, confusion_matrix
+        metrics = {
+            'accuracy': accuracy,
+            'f1_score': f1_score,
+            'confusion_matrix': confusion_matrix
+        }
+
+        if return_preds:
+            preds = torch.cat(labels_pred_all, dim=0)
+            return metrics, preds
+        else:
+            return metrics
