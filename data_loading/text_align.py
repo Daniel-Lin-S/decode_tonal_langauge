@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Tuple
 
 import warnings
 
-from .utils import extract_block_id
+from .utils import extract_block_id, match_filename
 
 
 def handle_textgrids(
@@ -186,39 +186,6 @@ def get_textgrid_time(
     return max_time
 
 
-def _audio_condition(
-        file: str,
-        file_format: str,
-        audio_kwords: Optional[List[str]]=None,
-    ) -> bool:
-    """
-    Check if the file is an audio recording and
-    satisfies the filtering conditions.
-    """
-    condition = 'sound' in file and file.endswith(f'.{file_format}')
-
-    if audio_kwords is not None:
-        for kw in audio_kwords:
-            condition = condition and kw in file
-    
-    return condition
-
-def _ecog_condition(
-        file: str, file_format: str,
-        ecog_kwords: Optional[List[str]]=None,
-    ) -> bool:
-    """
-    Check if the file is an ECoG recording and
-    satisfies the filtering conditions.
-    """
-    condition = 'ecog' in file and file.endswith(f'.{file_format}')
-
-    if ecog_kwords is not None:
-        for kw in ecog_kwords:
-            condition = condition and kw in file
-
-    return condition
-
 def extract_ecog_audio(
         intervals: Dict[int, pd.DataFrame],
         recording_dir: str,
@@ -290,8 +257,11 @@ def extract_ecog_audio(
 
     print('Syllable mapping used: ', dict(enumerate(syllables)))
 
+    ecog_kwords = ecog_kwords.append('ecog')
+    audio_kwords = audio_kwords.append('sound')
+
     for file in os.listdir(recording_dir):
-        if _ecog_condition(file, recording_format, ecog_kwords):   # ECoG Recording
+        if match_filename(file, recording_format, ecog_kwords):
             block = extract_block_id(file)
             if block not in intervals:
                 continue
@@ -305,22 +275,22 @@ def extract_ecog_audio(
 
             file_path = os.path.join(recording_dir, file)
 
-            dataaset = np.load(file_path)
+            dataset = np.load(file_path)
             try:
-                ecog_data = dataaset['data']
+                ecog_data = dataset['data']
             except KeyError:
                 raise KeyError(
                     f"Expected key 'data' not found in the npz file {file}. "
                     "Ensure the ECoG data is correctly stored."
-                    f"Existing keys {list(dataaset.keys())}."
+                    f"Existing keys {list(dataset.keys())}."
                 )
             try:
-                ecog_sampling_rate = dataaset['sf']
+                ecog_sampling_rate = dataset['sf']
             except:
                 raise KeyError(
                     f"Expected key 'sf' not found in the npz file {file}. "
                     "Ensure the sampling frequency is correctly stored."
-                    f"Existing keys {list(dataaset.keys())}."
+                    f"Existing keys {list(dataset.keys())}."
                 )
 
             print(
@@ -381,8 +351,8 @@ def extract_ecog_audio(
                 
                 ecog_rest_samples[block] = np.array(
                     ecog_rest_samples[block])
-        
-        elif _audio_condition(file, recording_format, audio_kwords):  # Audio Recording
+
+        elif match_filename(file, recording_format, audio_kwords):  # Audio Recording
             block = extract_block_id(file)
             if block not in intervals:
                 continue
