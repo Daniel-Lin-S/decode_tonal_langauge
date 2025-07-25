@@ -1,0 +1,2 @@
+from classifier_trainer import ClassifierTrainer
+from synthesis_trainer import SynthesisTrainer

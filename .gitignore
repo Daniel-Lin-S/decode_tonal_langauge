@@ -6,6 +6,6 @@ notebooks
 configs
 checkpoints
 results
+trial/*
 *.sh
-_*.py
 __pycache__
