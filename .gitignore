@@ -6,6 +6,7 @@ notebooks
 configs
 checkpoints
 results
+tensorboards
 trial/*
 *.sh
 __pycache__

@@ -47,10 +47,14 @@ class CBraMod(nn.Module):
     https://openreview.net/forum?id=NPNUHgHF2w
     """
     def __init__(
-            self, in_dim: int=200, out_dim: int=200,
-            d_model: int=200, dim_feedforward: int=800,
-            seq_len: int=30, n_layer: int=12,
-            nhead: int=8, linear_proj: bool=True
+            self,
+            in_dim: int=200,
+            out_dim: int=200,
+            d_model: int=200,
+            dim_feedforward: int=800,
+            n_layer: int=12,
+            nhead: int=8,
+            linear_proj: bool=True
         ):
         """
         Parameters
@@ -79,7 +83,7 @@ class CBraMod(nn.Module):
         """
         super().__init__()
         self.patch_embedding = PatchEmbedding(
-            in_dim, out_dim, d_model, seq_len)
+            in_dim, d_model)
         encoder_layer = TransformerEncoderLayer(
             d_model=d_model, nhead=nhead,
             dim_feedforward=dim_feedforward,
@@ -136,7 +140,7 @@ class PatchEmbedding(nn.Module):
     Embed EEG patches into a higher-dimensional space
     using convolutional layers and spectral features.
     """
-    def __init__(self, in_dim: int, out_dim: int, d_model: int, seq_len: int):
+    def __init__(self, in_dim: int, d_model: int):
         """
         Parameters
         ----------
