@@ -7,3 +7,4 @@ tdt=0.6.8
 matplotlib_venn=1.1.2
 pandas=2.3.0
 seaborn=0.13.2
+pytorch-lightning=2.5.2
