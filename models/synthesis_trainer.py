@@ -45,7 +45,8 @@ def compute_mcd(true_mcc: torch.Tensor, pred_mcc: torch.Tensor) -> float:
 
 class SynthesisTrainer:
     """
-    A trainer for PyTorch models used for classification tasks.
+    A trainer for speech synthesis models that combines
+    a synthesis model with tone and syllable classification models.
     It uses the NAdam optimizer and
     supports both binary and multi-class classification.
 

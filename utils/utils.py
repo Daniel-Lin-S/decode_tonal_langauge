@@ -92,6 +92,10 @@ def prepare_class_labels(
         ]
 
     else:  # Handle a single target
+        if n_classes_dict is None:
+            raise ValueError(
+                f"Number of classes for target '{targets[0]}' is not provided."
+            )
         if class_label_dict[targets[0]] is None:
             class_labels = np.arange(
                 1, n_classes_dict[target] + 1).astype(str)

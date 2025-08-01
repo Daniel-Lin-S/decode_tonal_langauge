@@ -6,7 +6,7 @@ https://www.science.org/doi/full/10.1126/sciadv.adh0478
 
 Features:
 - Involves modules for pre-processing ECoG signals
-- Involes modules for aligning signals with event onsets to obtain the Event-related Potentials (ERPs)
+- Involves modules for aligning signals with event onsets to obtain the Event-related Potentials (ERPs)
 - Involves modules for selection of channels based on their activity and discriminative power on a categorical label (e.g. tone in this case)
 These modules can be applied to other tasks.
 - Extendable classifier, speech synthesizer frameworks with corresponding trainers to define your own model architectures.

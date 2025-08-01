@@ -168,8 +168,7 @@ def downsample(
         Which has samplinng rate of target_freq.
     """
 
-    n_samples = math.ceil(
-        int(data.shape[1] * (target_freq / source_freq)))
+    n_samples = int(data.shape[1] * target_freq / source_freq)
     data_ds = signal.resample(data, n_samples, axis=1)
 
     return data_ds
