@@ -118,7 +118,8 @@ def main():
 
     if params.model not in model_configs:
         raise ValueError(
-            f"Model configuration for '{params.model}' not found in {params.model_configs}."
+            f"Model configuration for '{params.model}' not "
+            f"found in {params.model_configs}."
         )
 
     print("Parameters: ", params)
@@ -149,7 +150,13 @@ def main():
     )
 
     if params.model == 'CBraMod':
-        model = CBraMod(**model_configs['CBraMod'])
+        # select only the parameters relevant to cBraMod
+        configs = {
+            key: value for key, value in model_configs['CBraMod'].items()
+            if key in CBraMod.__init__.__code__.co_varnames
+        }
+
+        model = CBraMod(**configs)
 
     else:
         raise ValueError(
@@ -163,7 +170,9 @@ def main():
 
     trainer = PretrainTrainer(
         params, data_loader, model,
-        log_interval=params.log_interval
+        log_interval=params.log_interval,
+        layers_to_freeze=model_configs[params.model].get(
+            'layers_to_freeze', None),
     )
     trainer.train()
 

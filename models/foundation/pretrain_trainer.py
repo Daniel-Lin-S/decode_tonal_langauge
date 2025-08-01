@@ -1,11 +1,13 @@
 import numpy as np
 import torch
 from torch.nn import MSELoss
+from torch.nn.utils import clip_grad_norm_
 from torchinfo import summary
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import warnings
 from argparse import Namespace
+from typing import List, Optional
 
 from .maskings import generate_mask
 
@@ -47,7 +49,8 @@ class PretrainTrainer(object):
             self, params: Namespace,
             data_loader: DataLoader,
             model: torch.nn.Module,
-            log_interval: int=0
+            log_interval: int=0,
+            layers_to_freeze: Optional[List[str]]=None
         ) -> None:
         """
         Parameters
@@ -74,13 +77,24 @@ class PretrainTrainer(object):
             Interval for logging training progress. \n
             If set to 0, only log at the end of each epoch.
             If negative, no logging will be done.
+        layers_to_freeze : List[str], optional
+            List of layer names to freeze during training.
+            Freezing layers can help reduce training time and memory usage,
+            and also prevent overfitting. \n
+            If None, no layers will be frozen.
         """
         self.params = params
+        self.data_loader = data_loader
+        self.layers_to_freeze = layers_to_freeze
+
         self.device = torch.device(
             f"cuda:{self.params.cuda}" if torch.cuda.is_available() else "cpu"
         )
-        self.data_loader = data_loader
+
         self.model = model.to(self.device)
+        if self.layers_to_freeze is not None:
+            self.freeze_layers(self.layers_to_freeze)
+
         self.criterion = MSELoss(reduction='mean').to(self.device)
         self.log_interval = log_interval
 
@@ -122,6 +136,12 @@ class PretrainTrainer(object):
         Train the model using the provided
         data loader and parameters.
         """
+
+        if self.layers_to_freeze is not None:
+            self.freeze_layers(self.layers_to_freeze)
+        else:
+            self.model.train()
+
         best_loss = float('inf')
 
         for epoch in range(self.params.epochs):
@@ -159,7 +179,7 @@ class PretrainTrainer(object):
 
                 loss.backward()
                 if self.params.clip_value > 0:
-                    torch.nn.utils.clip_grad_norm_(
+                    clip_grad_norm_(
                         self.model.parameters(), self.params.clip_value
                     )
 
@@ -190,6 +210,18 @@ class PretrainTrainer(object):
                         global_step=epoch * self.data_length + i
                     )
 
+                    # log gradient norm
+                    grad_norm = torch.norm(torch.stack([
+                        p.grad.detach().norm(2)
+                        for p in self.model.parameters()
+                        if p.grad is not None
+                    ]), 2)
+
+                    self.writer.add_scalar(
+                        'Gradient Norm', grad_norm,
+                        global_step=epoch * self.data_length + i
+                    )
+
             mean_loss = np.mean(losses)
             learning_rate = self.optimizer.state_dict()['param_groups'][0]['lr']
 
@@ -208,6 +240,12 @@ class PretrainTrainer(object):
                     )
 
                 self.writer.add_scalar('Learning Rate', learning_rate, epoch)
+                # log gradient norm
+
+                self.writer.add_scalar(
+                    'Gradient Norm', grad_norm,
+                    global_step=epoch * self.data_length + i
+                )
 
             print(
                 f'Epoch {epoch+1}: '
@@ -223,6 +261,7 @@ class PretrainTrainer(object):
 
         # Close the TensorBoard writer
         self.writer.close()
+        self.model.eval()
 
     def _configure_scheduler(self, scheduler: str) -> None:
         """
@@ -237,7 +276,7 @@ class PretrainTrainer(object):
         if scheduler == 'CosineAnnealingLR':
             self.optimizer_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 self.optimizer, T_max=40*self.data_length,
-                eta_min=1e-5
+                eta_min=self.params.lr * 1e-4
             )
         elif scheduler=='ExponentialLR':
             self.optimizer_scheduler = torch.optim.lr_scheduler.ExponentialLR(
@@ -266,3 +305,19 @@ class PretrainTrainer(object):
             raise ValueError(
                 f"Unsupported lr_scheduler: {scheduler}"
             )
+
+    def freeze_layers(self, layers: List[str]) -> None:
+        """
+        Freeze some layers to reduce training time and memory usage,
+        and also to prevent overfitting.
+
+        Parameters
+        ----------
+        layers : List[str]
+            List of layer names to freeze.
+            The names should match the model's attribute names.
+        """
+
+        for name, param in self.model.named_parameters():
+            if any(layer in name for layer in layers):
+                param.requires_grad = False

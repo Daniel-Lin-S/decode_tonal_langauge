@@ -1,2 +1,2 @@
-from .classifier_trainer import ClassifierTrainer
+from .classifier_trainer import LightningClassifier
 from .synthesis_trainer import SynthesisTrainer

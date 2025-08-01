@@ -1,328 +1,135 @@
+"""Utilities for training classifiers with PyTorch Lightning."""
+
+from typing import Dict, Optional
+
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 from torch.optim import NAdam
 from torchmetrics.classification import (
-    MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix
+    MulticlassAccuracy,
+    MulticlassF1Score,
+    MulticlassConfusionMatrix
 )
+import pytorch_lightning as pl
+import os
+import pandas as pd
 
-from typing import Tuple, List, Optional, Dict
 
 from .classifier import ClassifierModel
 
 
-class ClassifierTrainer:
-    """
-    A trainer for PyTorch models used for classification tasks.
-    It uses the NAdam optimizer and
-    supports both binary and multi-class classification.
-
-    Attributes
-    ----------
-    model : torch.nn.Module
-        The model to be trained.
-    device : torch.device
-        The device on which the model will be trained.
-    optimizer : torch.optim.Optimizer
-        The optimizer used for training the model.
-    criterion : torch.nn.Module
-        The loss function used for training.
-    metric : torchmetrics.Metric
-        The metric used to evaluate the model's performance.
-        MulticlassAccuracy used in this model.
-    """
+class LightningClassifier(pl.LightningModule):
+    """Lightning module wrapping a :class:`ClassifierModel`."""
 
     def __init__(
             self, model: ClassifierModel,
-            device: torch.device = torch.device("cpu"),
-            n_classes: Optional[int]=None,
             learning_rate: float=0.0005,
-            beta_1: float=0.9,
-            beta_2: float=0.999,
-            epsilon: float=1e-08,
-            schedule_decay: float=0.004,
-            verbose: bool=True
         ) -> None:
         """
         Parameters
         ----------
         model : torch.nn.Module
             The model to be trained.
-        device : torch.device, optional
-            The device on which the model will be trained,
-            by default torch.device("cpu").
-        n_classes : int
-            Number of classes for classification.
         learning_rate : float, optional
             Learning rate for the optimizer, by default 0.0005.
-        beta_1 : float, optional
-            The exponential decay rate for the first moment estimates,
-            by default 0.9.
-        beta_2 : float, optional
-            The exponential decay rate for the second moment estimates,
-            by default 0.999.
-        epsilon : float, optional
-            Term added to the denominator to improve numerical stability,
-            by default 1e-08.
-        schedule_decay : float, optional
-            Weight decay for the optimizer, by default 0.004.
-        verbose : bool, optional
-            If True, prints the number of trainable parameters,
-            by default True.
         """
-        self.device = device
-        self.model = model.to(device)
-
-        if verbose:
-            print(f"Number of trainable parameters: {self.model.get_nparams():,}")
-
-        self.optimizer = NAdam(
-            model.parameters(),
-            lr=learning_rate,
-            betas=(beta_1, beta_2),
-            eps=epsilon,
-            weight_decay=schedule_decay
-        )
-
-        if hasattr(model, 'n_classes'):
-            n_classes = model.n_classes
-        elif n_classes is None:
-            raise ValueError(
-                "Number of classes must be specified "
-                "or the model must have n_classes attribute."
-            )
-        
-        if n_classes < 2:
-            raise ValueError(
-                "Number of classes must be at least 2."
-            )
-    
-        self.n_classes = n_classes
+        super().__init__()
+        self.model = model
+        self.learning_rate = learning_rate
 
         self.criterion = nn.CrossEntropyLoss()
         self.acc_metric = MulticlassAccuracy(
-            num_classes=n_classes,
+            num_classes=model.n_classes,
             average='macro'
-        ).to(device)
+        )
         self.f1_metric = MulticlassF1Score(
-            num_classes=n_classes,
+            num_classes=model.n_classes,
             average='macro'
-        ).to(device)
-        self.confusion_metric = MulticlassConfusionMatrix(
-            num_classes=n_classes
-        ).to(device)
+        )
+        self.confusion_metric = MulticlassConfusionMatrix(num_classes=model.n_classes)
 
+        # for evaluations
+        self.confusion_matrix: Optional[torch.Tensor] = None
 
-    def train(
-            self, train_loader: DataLoader,
-            epochs: int,
-            vali_loader: Optional[DataLoader]=None,
-            patience: int=5,
-            verbose: bool=True
-        ) -> List[Dict[str, float]]:
-        """
-        Train the model using the provided training data loader.
+    # ------------------------------------------------------------------
+    # Forward & Optimiser
+    # ------------------------------------------------------------------
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+        return self.model(x)
 
-        Parameters
-        ----------
-        train_loader : DataLoader
-            DataLoader for the training dataset.
-        epochs : int
-            Number of epochs to train the model.
-        vali_loader : DataLoader, optional
-            DataLoader for the validation dataset.
-            If provided, early stopping will be
-            applied based on validation loss,
-            by default None.
-        patience : int, optional
-            Number of epochs with no improvement
-            after which training will be stopped.
-            Used for early stopping, by default 5.
-        verbose : bool, optional
-            If True, prints training progress, by default True.
+    def configure_optimizers(self):
+        return NAdam(self.model.parameters(), lr=self.learning_rate)
 
-        Return
-        -------
-        history : list of dicts
-            A list of dictionaries containing training and validation
-            loss and accuracy for each epoch.
-            Keys: 'train_loss', 'train_accuracy', and
-            'vali_loss', 'vali_accuracy' (only if vali_loader is provided).
-        """
-        self.model.train()
-        history = []
-        best_vali_loss = float('inf')
-        counter = 0   # Counter for early stopping
+    # ------------------------------------------------------------------
+    # Training / Validation Steps
+    # ------------------------------------------------------------------
+    def training_step(self, batch, batch_idx):  # type: ignore[override]
+        x, y = batch
+        y = y.long()
+        logits = self.model(x)
+        loss = self.criterion(logits, y)
+        accuracy = self.acc_metric(logits, y)
 
-        for epoch in range(epochs):
-            epoch_loss = 0
-            epoch_accuracy = 0
+        self.log("train/loss", loss, prog_bar=False,
+                 on_step=True, on_epoch=True, logger=True)
+        self.log("train/accuracy", accuracy, prog_bar=False,
+                    on_step=False, on_epoch=True, logger=True)
 
-            for inputs, targets in train_loader:
-                inputs = inputs.to(self.device)
-                self.optimizer.zero_grad()
-                outputs = self.model(inputs)
-                targets = targets.long().to(self.device)
-                loss = self.criterion(outputs, targets)
-                loss.backward()
-                self.optimizer.step()
-                epoch_loss += loss.item()
-                epoch_accuracy = self.acc_metric(outputs, targets).item()
-
-            epoch_loss /= len(train_loader)
-            epoch_accuracy /= len(train_loader)
-
-            if vali_loader is not None:
-                vali_loss, vali_accuracy = self.vali(vali_loader)
-
-                if vali_loss < best_vali_loss:
-                    best_vali_loss = vali_loss
-                    if verbose:
-                        print(
-                            "Validaton loss improved, saving model..."
-                        )
-                    best_model_states = self.model.state_dict()
-                else:
-                    counter += 1
-
-                if verbose:
-                    print(f"Epoch {epoch+1}/{epochs}, "
-                          f"Train Loss: {epoch_loss:.4f}, "
-                          f"Train Accuracy: {epoch_accuracy:.4f}, "
-                          f"Validation Loss: {vali_loss:.4f}"
-                          f", Validation Accuracy: {vali_accuracy:.4f}"
-                        )
-
-                history.append({
-                    'train_loss': epoch_loss,
-                    'train_accuracy': epoch_accuracy,
-                    'vali_loss': vali_loss,
-                    'vali_accuracy': vali_accuracy
-                })
-
-                if counter >= patience:
-                    if verbose:
-                        print(
-                            f"Early stopping at epoch {epoch+1}, "
-                            "no improvement in validation loss."
-                        )
-                    break
-            else:
-                if verbose:
-                    print(f"Epoch {epoch+1}/{epochs}, "
-                        f"Training Loss: {epoch_loss:.4f}"
-                        f", Training Accuracy: {epoch_accuracy:.4f}")
-                
-                history.append({
-                    'train_loss': epoch_loss,
-                    'train_accuracy': epoch_accuracy
-                })
-
-        if vali_loader is not None:
-            self.model.load_state_dict(best_model_states)
-
-        return history
+        return {"loss": loss}
     
-    def vali(self, vali_loader: DataLoader) -> torch.Tensor:
-        """
-        Validate the model using the provided validation data loader.
+    def validation_step(self, batch, batch_idx):  # type: ignore[override]
+        x, y = batch
+        y = y.long()
+        logits = self.model(x)
 
-        Parameters
-        ----------
-        vali_loader : DataLoader
-            DataLoader for the validation dataset.
+        loss = self.criterion(logits, y)
+        self.log("val/loss", loss, prog_bar=False,
+            on_epoch=True, logger=True)
 
-        Returns
-        -------
-        vali_loss : float
-            The validation loss computed over the validation dataset,
-            averaged across all batches.
-        vali_accuracy : float
-            The validation accuracy computed over the validation dataset,
-            averaged across all batches.
-        """
-        self.model.eval()
-        self.acc_metric.reset()
+        accuracy = self.acc_metric(logits, y)
+        self.log("val/accuracy", accuracy, prog_bar=False,
+                 on_epoch=True, logger=True)
 
-        vali_loss = 0.0
-        vali_accuracy = 0.0
+        return {"val/loss": loss}
 
-        with torch.no_grad():
-            for inputs, targets in vali_loader:
-                inputs = inputs.to(self.device)
-                targets = targets.long().to(self.device)
-                outputs = self.model(inputs)
+    # ------------------------------------------------------------------
+    # Testing / Prediction
+    # ------------------------------------------------------------------
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        y = y.long()
+        logits = self.model(x)
+        preds = logits.argmax(dim=1)
 
-                vali_loss += self.criterion(outputs, targets).item()
-                vali_accuracy += self.acc_metric(outputs, targets).item()
+        self.acc_metric.update(logits, y)
+        self.f1_metric.update(logits, y)
+        self.confusion_metric.update(preds, y)
 
-        vali_loss /= len(vali_loader)
-        vali_accuracy /= len(vali_loader)
+    def on_test_epoch_end(self) -> None:
+        self.test_accuracy = self.acc_metric.compute().item()
+        self.test_f1 = self.f1_metric.compute().item()
+        self.confusion_matrix = self.confusion_metric.compute()
 
-        self.model.train()
-        self.acc_metric.reset()
-
-        return vali_loss, vali_accuracy
-
-    def evaluate(
-            self,
-            test_loader: DataLoader,
-            return_preds: bool=False
-        ) -> Tuple[torch.Tensor, float]:
-        """
-        Evaluate the model on the test dataset.
-
-        Parameters
-        ----------
-        test_loader : DataLoader
-            DataLoader for the test dataset.
-        return_preds : bool, optional
-            If True, returns the predictions along with the metrics,
-            by default False.
-
-        Returns
-        -------
-        metrics : dict
-            A dictionary containing the evaluation metrics:
-            - 'accuracy': The accuracy of the model on the test dataset.
-            - 'f1_score': The F1 score of the model on the test dataset.
-            - 'confusion_matrix': The confusion matrix of the model on the test dataset.
-        If return_preds is True, also returns:
-        preds : torch.Tensor
-            Predictions made by the model on the test dataset.
-        """
-        self.model.eval()
+        cm_dir = os.path.join(self.logger.log_dir, "confusion_matrix")
+        os.makedirs(cm_dir, exist_ok=True)
+        cm_path = os.path.join(cm_dir, "confusion_matrix.csv")
+        cm_array = self.confusion_matrix.cpu().numpy()
+        pd.DataFrame(cm_array).to_csv(cm_path, index=False, header=False)
 
         self.acc_metric.reset()
         self.f1_metric.reset()
         self.confusion_metric.reset()
 
-        labels_pred_all = []
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):  # type: ignore[override]
+        x, _ = batch
+        logits = self.model(x)
+        return logits.argmax(dim=1)
 
-        with torch.no_grad():
-            for inputs, targets in test_loader:
-                inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
-                outputs = self.model(inputs)
-                labels_pred = outputs.argmax(dim=1)
-                labels_pred_all.append(labels_pred.cpu())
+    # ------------------------------------------------------------------
+    # Helper proxies to underlying model
+    # ------------------------------------------------------------------
+    def get_nparams(self) -> int:
+        return self.model.get_nparams()
 
-                self.acc_metric.update(outputs, targets)
-                self.f1_metric.update(outputs, targets)
-                self.confusion_metric.update(labels_pred, targets)
-
-        accuracy = self.acc_metric.compute().item()
-        f1_score = self.f1_metric.compute().item()
-        confusion_matrix = self.confusion_metric.compute().cpu().numpy()
-
-        metrics = {
-            'accuracy': accuracy,
-            'f1_score': f1_score,
-            'confusion_matrix': confusion_matrix
-        }
-
-        if return_preds:
-            preds = torch.cat(labels_pred_all, dim=0)
-            return metrics, preds
-        else:
-            return metrics
+    def get_layer_nparams(self) -> Dict[str, int]:
+        return self.model.get_layer_nparams()
