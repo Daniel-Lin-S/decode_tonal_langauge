@@ -1,5 +1,5 @@
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 import numpy as np
 
 
@@ -77,3 +77,40 @@ def prepare_tone_dynamics(
     dynamics = np.array(dynamics)
 
     return dynamics
+
+
+def match_filename(
+        file: str, file_format: str,
+        kwords: Optional[List[str]]=None,
+    ) -> bool:
+    """
+    Check if the file is of desired form and
+    have all the keywords in the filename.
+
+    Parameters
+    ----------
+    file : str
+        The filename to check.
+    file_format : str
+        The expected file format (e.g., 'wav', 'TextGrid').
+    kwords : List[str], optional
+        List of keywords to check in the filename.
+        If None, no keywords are checked.
+
+    Returns
+    -------
+    bool
+        True if the file matches the criteria, False otherwise.
+    """
+    # Check file extension
+    if not file.endswith(file_format):
+        return False
+
+    condition = True
+
+    if kwords is not None:
+        for word in kwords:
+            if word not in file:
+                condition = False
+
+    return condition
