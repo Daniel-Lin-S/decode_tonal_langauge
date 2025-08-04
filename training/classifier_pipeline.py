@@ -298,6 +298,7 @@ def train_joint_targets(
             "model_size": model_size,
             "channels": channels,
             "class_labels": class_labels,
+            "seeds": seeds.tolist(),
         },
         confusion_mat,
         class_labels,
