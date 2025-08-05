@@ -19,24 +19,21 @@ from models.classifier_factory import get_classifier_by_name
 from models.classifier_trainer import LightningClassifier
 from utils.utils import set_seeds, prepare_class_labels
 from utils.visualise import plot_confusion_matrix
-from utils.metrics import compute_joint_metrics
+from utils.metrics import compute_classification_metrics_joint
 
 
 def train_separate_targets(
     params,
-    config: Dict,
     seeds: np.ndarray,
     eval_cfg: Dict,
 ) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a separate classifier for each target and combine results."""
 
-    syllable_labels = config.get("syllable_labels")
-    tone_labels = config.get("tone_labels")
-    classifier_kwargs = config.get("classifier_kwargs", {})
-
     class_labels = prepare_class_labels(
         params.targets,
-        class_label_dict={"syllable": syllable_labels, "tone": tone_labels},
+        class_label_dict={
+            "syllable": params.syllable_labels, "tone": params.tone_labels
+        },
     )
 
     all_datasets: Dict[str, TensorDataset] = {}
@@ -91,16 +88,13 @@ def train_separate_targets(
 
             trainer_verbose = params.verbose > 1
 
-            if params.model == "CBraMod":
-                classifier_kwargs["pretrained_weights_path"] = params.foundation_weights_path
-
             model = get_classifier_by_name(
                 params.model,
                 device=params.device,
                 n_classes=n_classes_dict[target],
                 n_channels=input_shapes[target][0],
                 seq_length=input_shapes[target][1],
-                classifier_kwargs=classifier_kwargs,
+                classifier_kwargs=params.model_kwargs
             )
             model_size += model.get_nparams()
 
@@ -154,7 +148,10 @@ def train_separate_targets(
             preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
             all_preds[target] = preds.cpu().numpy()
 
-        joint_metrics = compute_joint_metrics(all_true, all_preds, metrics=metrics)
+        joint_metrics = compute_classification_metrics_joint(
+            all_true, all_preds, metrics=metrics
+        )
+
         for m in metrics:
             if m == "confusion_matrix":
                 continue
@@ -180,10 +177,6 @@ def train_joint_targets(
 ) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a single model that predicts multiple targets jointly."""
 
-    syllable_labels = config.get("syllable_labels")
-    tone_labels = config.get("tone_labels")
-    classifier_kwargs = config.get("classifier_kwargs", {})
-
     erps, labels, channels, n_classes_dict = prepare_erps_labels(
         params.sample_path, params.targets, params.channel_file
     )
@@ -203,7 +196,9 @@ def train_joint_targets(
     class_labels = prepare_class_labels(
         params.targets,
         n_classes_dict=n_classes_dict,
-        class_label_dict={"syllable": syllable_labels, "tone": tone_labels},
+        class_label_dict={
+            "syllable": params.syllable_labels, "tone": params.tone_labels
+        },
     )
 
     metrics = eval_cfg.get("metrics", ["accuracy"])
@@ -224,13 +219,10 @@ def train_joint_targets(
 
         trainer_verbose = params.verbose > 1
 
-        if params.model == "CBraMod":
-                classifier_kwargs["pretrained_weights_path"] = params.foundation_weights_path
-
         model = get_classifier_by_name(
             params.model, params.device,
             n_classes, n_channels, seq_length,
-            classifier_kwargs=classifier_kwargs
+            classifier_kwargs=params.model_kwargs
         )
         model_size = model.get_nparams()
 
@@ -277,7 +269,9 @@ def train_joint_targets(
         preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
         true = np.concatenate([b[1].cpu().numpy() for b in loaders[2]])
 
-        joint_metrics = compute_joint_metrics({"label": true}, {"label": preds}, metrics=metrics)
+        joint_metrics = compute_classification_metrics_joint(
+            {"label": true}, {"label": preds}, metrics=metrics
+        )
 
         if params.model_dir is not None:
             target_str = "_".join(params.targets) if len(params.targets) > 1 else params.targets[0]
@@ -327,21 +321,23 @@ def save_and_plot_results(
         "subject": params.subject_id,
         "target": ",".join(params.targets),
         "electrodes": str(result_info["channels"]),
-        "seeds": str(result_info.get("seeds")),
-        "learning_rate": params.lr,
-        "epochs": params.epochs,
-        "patience": params.patience,
-        "batch_size": params.batch_size,
+        "seeds": str(result_info.get("seeds"))
     }
 
     for m in metrics:
-        if m == "confusion_matrix":
+        if m == "confusion_matrix":  # already aggregated
             continue
         values = result_info[m]
         for agg in aggregates:
-            agg_func = getattr(np, agg)
+            try:
+                agg_func = getattr(np, agg)
+            except AttributeError:
+                raise ValueError(
+                    f"Aggregate function '{agg}' is not recognized in numpy."
+                    "Please change evaluation.aggregates parameter."
+                )
             results[f"{m}_{agg}"] = float(agg_func(values))
-        results[f"all_{m}"] = str(values)
+        results[f"{m}_all"] = str(values)
 
     if confusion_matrix is not None and "confusion_matrix" in metrics:
         results["confusion_matrix"] = str(confusion_matrix.tolist())
