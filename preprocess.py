@@ -2,134 +2,166 @@
 Extract ECoG signal from TDT blocks, preprocess, and save to .npz files.
 
 This script now reads its parameters from a YAML configuration file.
+
+Structure of the output directory:
+processed/
+├── setup_1/
+|   ├── config.yaml
+│   ├── subject_1/
+│   │   ├── B1_ecog.npz
+│   │   ├── B1_sound.npz
+│   │   ├── ...
+│   ├── subject_2/
+│   │   ├── B1_ecog.npz
+│   │   ├── B1_sound.npz
+│   │   ├── ...
+├── setup_2/
+|   ├── config.yaml
+│   ├── subject_1/
+│   │   ├── B1_ecog.npz
+│   │   ├── B1_sound.npz
+│   │   ├── ...
+│   ├── subject_2/
+│   │   ├── B1_ecog.npz
+│   │   ├── B1_sound.npz
+│   │   ├── ...
+where B stands for block / trial.
+Set up name will be generated based on the preprocessing steps:
+# step1__step2__step3_<hash>
 """
 
 import os
 import tdt
 import numpy as np
+import yaml
+import importlib
+from utils.config import dict_to_namespace, load_config
 
-from data_loading.preprocessing import (
-    hilbert_filter,
-    downsample,
-    zscore,
-    rereference,
-    bandpass_filter,
-)
-from utils.config import dict_to_namespace
+import sys
+import hashlib
 
 
-def run(config: dict, config_path: str | None = None) -> None:
+def run(config: dict) -> None:
     """Extract and preprocess ECoG signals based on configuration."""
 
-    pre_cfg = config.get("preprocess", {}).get("params", {})
-    params_dict = {}
-    for section in ("io", "experiment", "settings", "training"):
-        params_dict.update(pre_cfg.get(section, {}))
-    params = dict_to_namespace(params_dict)
+    pre_cfg = config.get("preprocess", {})
+    io_cfg = pre_cfg.get("io", {})
 
-    freq_ranges = getattr(params, "freq_ranges", None)
-    freq_band = getattr(params, "freq_band", None)
-    freq = getattr(params, "downsample_freq", 400)
+    params = dict_to_namespace(io_cfg)
 
-    if not os.path.exists(params.output_dir):
-        os.makedirs(params.output_dir)
+    os.makedirs(params.output_dir, exist_ok=True)
 
-    for dir in os.listdir(params.tdt_dir):
-        try:
-            block_id = int(dir.split('-')[-1].replace('B', ''))
-            print(f'Processing block {block_id} of subject {params.subject_id}...')
-        except ValueError:
-            print(
-                f"Skipping directory '{dir}' as it does not match expected format.",
-                "Expected format: 'HS<subject_id>-<block_id>'.",
-            )
-            continue
+    setup_name = generate_setup_name(pre_cfg)
+    setup_dir = os.path.join(params.output_dir, setup_name)
+    os.makedirs(setup_dir, exist_ok=True)
 
-        if freq_ranges is not None:
-            if freq_band is None:
-                raise ValueError(
-                    "freq_band must be specified when freq_ranges is provided."
+    # Save the configuration used for this setup
+    config_file_path = os.path.join(setup_dir, 'config.yaml')
+    with open(config_file_path, 'w') as f:
+        yaml.dump(pre_cfg, f)
+
+    if not hasattr(params, 'subject_ids'):
+        params.subject_ids = [
+            i+1 for i in range(len(params.subject_dirs))
+        ]
+
+    for subject_id, subject_dir in zip(params.subject_ids, params.subject_dirs):
+        subject_dir = os.path.join(params.root_dir, subject_dir)
+
+        for dir in os.listdir(subject_dir):
+            try:
+                block_id = int(dir.split('-')[-1].replace('B', ''))
+                print(f'Processing block {block_id} of subject {subject_id}...')
+            except ValueError:
+                print(
+                    f"Skipping directory '{dir}' as it does not match expected format.",
+                    "Expected format: 'HS<subject_id>-<block_id>'.",
                 )
-            file_name = f'HS{params.subject_id}_B{block_id}_ecog_{freq_band}_{freq}Hz.npz'
-        else:
-            file_name = f'HS{params.subject_id}_B{block_id}_ecog_{freq}Hz.npz'
+                continue
 
-        ecog_file = os.path.join(params.output_dir, file_name)
-        audio_file = os.path.join(
-            params.output_dir, f'HS{params.subject_id}_B{block_id}_sound.npz'
-        )
+            ecog_file_name = f'B{block_id}_ecog.npz'
+            audio_file_name = f'B{block_id}_sound.npz'
 
-        if os.path.exists(ecog_file) and os.path.exists(audio_file):
-            print(f'Skipping block {block_id}, already processed.')
-            continue
+            subject_output_dir = os.path.join(setup_dir, f"subject_{subject_id}")
+            os.makedirs(subject_output_dir, exist_ok=True)
 
-        block_path = os.path.join(params.tdt_dir, dir)
-        block_data = tdt.read_block(block_path)
+            ecog_file = os.path.join(subject_output_dir, ecog_file_name)
+            audio_file = os.path.join(subject_output_dir, audio_file_name)
 
-        data = block_data.streams.EOG1.data
-        ecog_freq = block_data.streams.EOG1.fs
-        audio = block_data.streams.ANIN.data
-        audio_freq = block_data.streams.ANIN.fs
+            if os.path.exists(ecog_file) and os.path.exists(audio_file):
+                print(f'Skipping block {block_id}, already processed.')
+                continue
 
-        print('Audio shape: ', audio.shape)
-        print('ECoG data shape: ', data.shape)
-        print('ECoG sampling frequency:', ecog_freq)
+            block_path = os.path.join(subject_dir, dir)
+            block_data = tdt.read_block(block_path)
 
-        audio = audio[:1, :]   # mono-channel audio
-        ecog_down = downsample(data, ecog_freq, freq)
+            data = block_data.streams.EOG1.data
+            ecog_freq = block_data.streams.EOG1.fs
+            audio = block_data.streams.ANIN.data
+            audio = audio[:1, :]   # mono-channel audio
+            audio_freq = block_data.streams.ANIN.fs
 
-        if freq_ranges is not None:
-            all_channels = []
-            for freq_range in freq_ranges:
-                if len(freq_range) != 2:
-                    raise ValueError(
-                        "Each frequency range must have exactly two elements."
-                    )
-                if getattr(params, "envelope", False):
-                    signals = hilbert_filter(
-                        ecog_down, freq, freq_ranges=[freq_range]
-                    )
-                else:
-                    signals = bandpass_filter(
-                        ecog_down,
-                        lowcut=freq_range[0],
-                        highcut=freq_range[1],
-                        fs=freq,
-                    )
-                all_channels.append(signals)
-            ecog_filtered = np.concatenate(all_channels, axis=0)
-        else:
-            ecog_filtered = ecog_down
-
-        if params.normalisation == 'zscore':
-            ecog_normalised = zscore(ecog_filtered)
-        elif params.normalisation == 'rereference':
-            start, end = params.rereference_interval
-            start_sample = int(start * freq)
-            end_sample = int(end * freq)
-            ecog_normalised = rereference(
-                ecog_filtered, (start_sample, end_sample)
+            block_params = dict_to_namespace(
+                {
+                    **vars(params),
+                    'block_id': block_id,
+                    'subject_id': subject_id,
+                    'signal_freq': ecog_freq
+                }
             )
-        else:
-            raise ValueError("Invalid normalisation method specified.")
 
-        if not os.path.exists(ecog_file):
-            np.savez(ecog_file, data=ecog_normalised, sf=freq)
-            print('Saved ECoG data to:', ecog_file)
-        else:
-            print('ECoG data already exists:', ecog_file)
+            print('Audio shape: ', audio.shape)
+            print('ECoG data shape: ', data.shape)
+            print('ECoG sampling frequency:', ecog_freq)
 
-        if not os.path.exists(audio_file):
-            np.savez(audio_file, data=audio, sf=int(audio_freq))
-            print('Saved audio data to:', audio_file)
-        else:
-            print('Audio data already exists:', audio_file)
+            for step in pre_cfg.get('steps', []):
+                module_name = step['module']
+                step_params = step.get('params', {})
+
+                for key, value in step_params.items():
+                    if hasattr(block_params, key):
+                        raise ValueError(
+                            f"Parameter '{key}' already exists in params. "
+                            "Please ensure no conflicting parameter names"
+                            " in each preprocessing step."
+                        )
+
+                    setattr(block_params, key, value)
+
+                module = importlib.import_module(module_name)
+                data = module.run(data, block_params)
+
+            if not os.path.exists(ecog_file):
+                np.savez(ecog_file, data=data, sf=block_params.signal_freq)
+                print('Saved ECoG data to:', ecog_file)
+            else:
+                print('ECoG data already exists:', ecog_file)
+
+            if not os.path.exists(audio_file):
+                np.savez(audio_file, data=audio, sf=int(audio_freq))
+                print('Saved audio data to:', audio_file)
+            else:
+                print('Audio data already exists:', audio_file)
+
+
+def generate_setup_name(pre_cfg: dict) -> str:
+    """Generate a unique name for the preprocessing setup based on the configuration."""
+    steps = pre_cfg.get("steps", [])
+
+    readable_parts = [
+        step["module"].split(".")[-1] for step in steps
+    ]
+    readable_name = "__".join(readable_parts)
+
+    setup_str = "_".join([f"{step['module']}_{step['params']}" for step in steps])
+    hash_part = hashlib.md5(setup_str.encode()).hexdigest()[:6]
+
+    # ensure uniqueness and avoid overly long names
+    return f"{readable_name}_{hash_part}"
 
 
 if __name__ == "__main__":
-    import sys
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python preprocess.py <config.yaml>")
-    from utils.config import load_config
     cfg = load_config(sys.argv[1])
-    run(cfg, sys.argv[1])
+    run(cfg)

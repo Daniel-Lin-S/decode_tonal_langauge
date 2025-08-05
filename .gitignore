@@ -8,6 +8,6 @@ checkpoints
 results
 tensorboards
 trial/*
-local_*.py
+local_*
 *.sh
 __pycache__
