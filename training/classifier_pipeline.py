@@ -26,7 +26,8 @@ def train_separate_targets(
     params,
     config: Dict,
     seeds: np.ndarray,
-) -> Tuple[Dict, List[List[List[float]]], List[List[List[float]]], np.ndarray, List[str]]:
+    eval_cfg: Dict,
+) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a separate classifier for each target and combine results."""
 
     syllable_labels = config.get("syllable_labels")
@@ -64,9 +65,9 @@ def train_separate_targets(
     for cls in n_classes_dict.values():
         n_classes *= cls
 
-    accuracies: List[float] = []
-    f1_scores: List[float] = []
-    confusion_mat = np.zeros((n_classes, n_classes))
+    metrics = eval_cfg.get("metrics", ["accuracy"])
+    metric_values: Dict[str, List[float]] = {m: [] for m in metrics if m != "confusion_matrix"}
+    confusion_mat = np.zeros((n_classes, n_classes)) if "confusion_matrix" in metrics else None
     model_size = 0
 
     for i, seed in enumerate(seeds):
@@ -153,34 +154,30 @@ def train_separate_targets(
             preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
             all_preds[target] = preds.cpu().numpy()
 
-            confusion_mat += lightning_model.confusion_matrix.cpu().numpy()
+        joint_metrics = compute_joint_metrics(all_true, all_preds, metrics=metrics)
+        for m in metrics:
+            if m == "confusion_matrix":
+                continue
+            metric_values[m].append(joint_metrics[m])
 
-        joint_metrics = compute_joint_metrics(
-            all_true, all_preds,
-            metrics=["accuracy", "f1_score", "confusion_matrix"]
-        )
-        accuracies.append(joint_metrics["accuracy"])
-        f1_scores.append(joint_metrics["f1_score"])
+        if confusion_mat is not None and "confusion_matrix" in joint_metrics:
+            confusion_mat += joint_metrics["confusion_matrix"]
 
-    return (
-        {
-            "accuracies": accuracies,
-            "f1_scores": f1_scores,
-            "confusion_matrix": confusion_mat,
-            "model_size": model_size,
-            "channels": sorted(channels),
-            "class_labels": class_labels,
-        },
-        confusion_mat,
-        class_labels,
-    )
+    result_info = {
+        **metric_values,
+        "model_size": model_size,
+        "channels": sorted(channels),
+        "class_labels": class_labels,
+    }
+    return result_info, confusion_mat, class_labels
 
 
 def train_joint_targets(
     params,
     config: Dict,
     seeds: np.ndarray,
-) -> Tuple[Dict, List[List[float]], List[List[float]], np.ndarray, List[str]]:
+    eval_cfg: Dict,
+) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a single model that predicts multiple targets jointly."""
 
     syllable_labels = config.get("syllable_labels")
@@ -209,9 +206,9 @@ def train_joint_targets(
         class_label_dict={"syllable": syllable_labels, "tone": tone_labels},
     )
 
-    accuracies: List[float] = []
-    f1_scores: List[float] = []
-    confusion_mat = np.zeros((n_classes, n_classes))
+    metrics = eval_cfg.get("metrics", ["accuracy"])
+    metric_values: Dict[str, List[float]] = {m: [] for m in metrics if m != "confusion_matrix"}
+    confusion_mat = np.zeros((n_classes, n_classes)) if "confusion_matrix" in metrics else None
     model_size = 0
 
     for i, seed in enumerate(seeds):
@@ -277,6 +274,11 @@ def train_joint_targets(
 
         trainer.test(lightning_model, loaders[2])
 
+        preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
+        true = np.concatenate([b[1].cpu().numpy() for b in loaders[2]])
+
+        joint_metrics = compute_joint_metrics({"label": true}, {"label": preds}, metrics=metrics)
+
         if params.model_dir is not None:
             target_str = "_".join(params.targets) if len(params.targets) > 1 else params.targets[0]
             save_path = os.path.join(
@@ -286,23 +288,22 @@ def train_joint_targets(
             if params.verbose > 0:
                 print(f"Model saved to {save_path}")
 
-        accuracies.append(lightning_model.test_accuracy)
-        f1_scores.append(lightning_model.test_f1)
-        confusion_mat += lightning_model.confusion_matrix.cpu().numpy()
+        if confusion_mat is not None and "confusion_matrix" in joint_metrics:
+            confusion_mat += joint_metrics["confusion_matrix"]
 
-    return (
-        {
-            "accuracies": accuracies,
-            "f1_scores": f1_scores,
-            "confusion_matrix": confusion_mat,
-            "model_size": model_size,
-            "channels": channels,
-            "class_labels": class_labels,
-            "seeds": seeds.tolist(),
-        },
-        confusion_mat,
-        class_labels,
-    )
+        for m in metrics:
+            if m == "confusion_matrix":
+                continue
+            metric_values[m].append(joint_metrics[m])
+
+    result_info = {
+        **metric_values,
+        "model_size": model_size,
+        "channels": channels,
+        "class_labels": class_labels,
+        "seeds": seeds.tolist(),
+    }
+    return result_info, confusion_mat, class_labels
 
 
 def save_and_plot_results(
@@ -310,8 +311,14 @@ def save_and_plot_results(
     result_info: Dict,
     confusion_matrix: np.ndarray,
     class_labels: List[str],
+    eval_cfg: Dict,
 ) -> None:
     """Save results to CSV and generate plots."""
+
+    metrics = eval_cfg.get("metrics", [])
+    aggregates = eval_cfg.get("aggregates", ["mean", "std"])
+    if isinstance(aggregates, str):
+        aggregates = [aggregates]
 
     results = {
         "model_name": params.model_name,
@@ -325,15 +332,18 @@ def save_and_plot_results(
         "epochs": params.epochs,
         "patience": params.patience,
         "batch_size": params.batch_size,
-        "accuracy_mean": np.mean(result_info["accuracies"]),
-        "accuracy_std": np.std(result_info["accuracies"]),
-        "f1_mean": np.mean(result_info["f1_scores"]),
-        "f1_std": np.std(result_info["f1_scores"]),
-        "all_accuracies": str(result_info["accuracies"]),
-        "all_f1_scores": str(result_info["f1_scores"]),
     }
 
-    if confusion_matrix is not None:
+    for m in metrics:
+        if m == "confusion_matrix":
+            continue
+        values = result_info[m]
+        for agg in aggregates:
+            agg_func = getattr(np, agg)
+            results[f"{m}_{agg}"] = float(agg_func(values))
+        results[f"all_{m}"] = str(values)
+
+    if confusion_matrix is not None and "confusion_matrix" in metrics:
         results["confusion_matrix"] = str(confusion_matrix.tolist())
 
     df = pd.DataFrame([results])
@@ -343,11 +353,12 @@ def save_and_plot_results(
         df.to_csv(params.result_file, index=False)
     print(f"Results saved to {params.result_file}")
 
-    add_numbers = confusion_matrix.shape[0] <= 10
-    plot_confusion_matrix(
-        confusion_matrix,
-        add_numbers,
-        label_names=class_labels,
-        figure_path=os.path.join(params.figure_dir, "confusion_matrix.png"),
-    )
-    print(f"Confusion matrix saved to {params.figure_dir}/confusion_matrix.png")
+    if confusion_matrix is not None and "confusion_matrix" in metrics:
+        add_numbers = confusion_matrix.shape[0] <= 10
+        plot_confusion_matrix(
+            confusion_matrix,
+            add_numbers,
+            label_names=class_labels,
+            figure_path=os.path.join(params.figure_dir, "confusion_matrix.png"),
+        )
+        print(f"Confusion matrix saved to {params.figure_dir}/confusion_matrix.png")

@@ -1,0 +1,108 @@
+preprocess:
+  module: preprocess
+  params:
+    io:
+      tdt_dir: raw/ecog            # Directory containing TDT blocks
+      output_dir: processed/npz    # Directory to save processed data
+      subject_id: 1                # Subject ID for naming files
+    settings:
+      normalisation: rereference   # Normalisation method (zscore|rereference)
+      rereference_interval: [0, 1] # Interval in seconds for rereferencing
+      envelope: false              # Apply Hilbert envelope filtering
+      freq_ranges: [[0.3, 17], [70, 150]]  # Frequency bands for filtering
+      freq_band: hg                # Label for the frequency band
+      downsample_freq: 400         # Target sampling frequency
+
+channel_selection_active:
+  module: find_active_channels
+  params:
+    io:
+      recording_file_path: processed/npz/HS1_B1_ecog_hg_400Hz.npz  # Path to ECoG data
+      figure_dir: figures/active                                   # Directory for figures
+      output_file: configs/active_channels.json                    # JSON to save active channels
+    settings:
+      rest_recording_name: ecog_rest       # Name of rest recording in npz
+      erp_recording_name: ecog             # Name of ECoG recording
+      p_threshold: 0.001                   # P-value threshold for significance
+      consecutive_length_threshold: 50     # Minimum consecutive significant length
+      sampling_rate: 400                   # Sampling rate for plotting
+
+channel_selection_discriminative:
+  module: find_discriminative_channels
+  params:
+    io:
+      recording_file_path: processed/npz/HS1_combined.npz          # Path to combined ECoG data
+      channel_locations_file: data/channel_locs.mat               # Electrode location file
+      channel_locations_key: locs                                 # Key for locations in mat file
+      figure_dir: figures/discriminative                          # Directory for figures
+      output_file: configs/discriminative_channels.json           # JSON to save discriminative channels
+      channel_output_file: configs/channel_scores.csv             # CSV with scores for all channels
+    settings:
+      label_names: [syllable, tone]               # Labels used for testing
+      recording_name: ecog                        # Recording name in npz file
+      p_thresholds: [0.01, 0.001]                 # P-value thresholds per label
+      consecutive_length_thresholds: [50, 50]     # Min significant lengths
+      sampling_rate: 400                          # Sampling rate of recording
+      onset_time: null                            # Onset time for plotting
+      individual_figures: false                   # Save figures per channel
+
+sample_collection:
+  module: extract_samples
+  params:
+    io:
+      textgrid_dir: processed/annotation      # Directory containing TextGrid files
+      recording_dir: processed/npz            # Directory with ECoG and audio files
+      output_path: data/samples/samples.npz   # Output path for samples
+    settings:
+      audio_kwords: null      # Keywords to select audio files
+      ecog_kwords: null       # Keywords to select ECoG files
+      blocks: null            # List of block numbers to process
+      overwrite: false        # Overwrite output if it exists
+      rest_period: [0, 1]     # Rest period for referencing
+      syllable_identifiers: [ba, da]  # Syllables to extract
+
+dataset:
+  syllable_labels: ["ba", "da"]          # Labels for syllable targets
+  tone_labels: ["tone1", "tone2"]        # Labels for tone targets
+
+model:
+  model: models.simple_classifiers.LogisticRegressionClassifier  # Python path to model class
+  model_name: logistic                                           # Short model identifier
+  foundation_weights_path: null                                  # Optional pretrained weights
+  classifier_kwargs: {}                                          # Additional kwargs for model
+
+training:
+  module: train_classifier
+  params:
+    io:
+      sample_path: data/samples/samples.npz   # Path to training samples
+      figure_dir: figures                     # Directory for output figures
+      channel_file: null                      # Optional path to selected channels
+      result_file: results.csv                # CSV to log results
+      model_dir: null                         # Directory to save trained models
+      log_dir: logs                           # Directory for tensorboard logs
+    experiment:
+      subject_id: 1
+      targets: ["syllable"]
+      separate_models: false
+      seed: 42
+      repeat: 1
+      verbose: 1
+      device: cpu
+    training:
+      train_ratio: 0.7
+      vali_ratio: 0.1
+      test_ratio: 0.2
+      batch_size: 64
+      epochs: 10
+      lr: 0.0005
+      patience: 5
+      log_every_n_steps: 10
+
+evaluation:
+  params:
+    metrics: [accuracy, f1_score, precision_score, confusion_matrix]  # Metrics to compute
+    aggregates: [mean, std]                          # Aggregation methods across seeds
+
+visualisation:
+  module: null
