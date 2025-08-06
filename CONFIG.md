@@ -2,6 +2,10 @@
 
 This document describes the available parameters for each pipeline module.
 
+## Dataset
+- **syllable_labels**: Ordered list of syllable classes.
+- **tone_labels**: Ordered list of tone classes.
+
 ## Preprocess (`preprocess.py`)
 ### I/O
 - **root_dir**: Root directory containing the raw data for all subjects.  
@@ -29,18 +33,36 @@ def run(data: np.ndarray, params: Namespace) -> np.ndarray:
 
 Note that the signal frequency is available in `params.signal_freq` as a global parameter. If the sampling rate of the signal is changed by this pre-processing step, please modify `params.signal_freq` accordingly.
 
+## Sample Collection (`extract_samples.py`)
+### **io**
+- **textgrid_root**: Root directory containing TextGrid files.
+- **recording_dir**: Directory containing ECoG and audio `.npz` files. (should be an output of `preprocess.py`)
+- **output_dir**: Directory to save extracted samples.
+    - Each `.npz` file will be named `subject_{id}.npz`.
+    - A configuration file `config.yaml` will also be saved in this directory with all settings used for pre-processing and sample collection.
+### **`settings`**
+- **`syllable_identifiers`**: List of syllable identifies in the textgrid files.
+    Example: `["i", "a"]`
+- **`overwrite`**: Whether to overwrite existing files. Default: `false`
+### **`subjects`**: subject specific parameters
+- **`textgrid_dir`**: Subdirectory under `textgrid_root` containing TextGrid files for the subject.  
+    Example: `subject_24`
+- **`rest_period`**: Rest period (in seconds) for statistical tests.  
+Example: `[0.5, 1.0]`
+- **`sample_length`**: Length (in seconds) of each sample (epoch) to extract from the whole recording.
+- **`start_offset`**: Offset (in seconds) to extract before the event. If not given, default is `0.0`.
+- **`tier_list`**: List of tiers (`str`) in the textgrid files to consider for sample extraction. If not given, all tiers will be used.
+- **`blocks`**: List of blocks (`int`) to process. If not given, all blocks will be extracted.
+
 
 ## Active Channel Selection (`find_active_channels.py`)
 ### I/O
-- **recording_file_path**: Path to the `.npz` file containing the recording.
+- **sample_dir**: Directory where the `.npz` files with subject recording samples are stored.
 - **figure_dir**: Directory to save diagnostic figures.
-- **output_file**: JSON file to save active channel indices.
+- **output_dir**: Directory to save the identified active channels (in `json` files)
 ### Settings
-- **rest_recording_name**: Key for rest-period data in the `.npz` file.
-- **erp_recording_name**: Key for event-related potential data in the `.npz` file.
 - **p_threshold**: P-value threshold for significance.
-- **consecutive_length_threshold**: Minimum consecutive significant length.
-- **sampling_rate**: Sampling rate of the recording for plotting.
+- **consecutive_length_threshold**: Minimum consecutive significant length for a channel to be categorised as active.
 
 ## Discriminative Channel Selection (`find_discriminative_channels.py`)
 ### I/O
@@ -58,23 +80,6 @@ Note that the signal frequency is available in `params.signal_freq` as a global 
 - **sampling_rate**: Sampling rate of the recording.
 - **onset_time**: Onset time for aligning visualisations.
 - **individual_figures**: Whether to save figures for each channel individually.
-
-## Sample Collection (`extract_samples.py`)
-### I/O
-- **textgrid_dir**: Directory containing `TextGrid` annotation files.
-- **recording_dir**: Directory containing ECoG and audio `.npz` files.
-- **output_path**: Destination path for the extracted samples `.npz` file.
-### Settings
-- **audio_kwords**: Keywords to select audio files.
-- **ecog_kwords**: Keywords to select ECoG files.
-- **blocks**: List of block numbers to process.
-- **overwrite**: Overwrite existing output file if `true`.
-- **rest_period**: Rest period used for referencing.
-- **syllable_identifiers**: Syllables to extract from annotations.
--
-## Dataset
-- **syllable_labels**: Ordered list of syllable classes.
-- **tone_labels**: Ordered list of tone classes.
 
 ## Model
 - **model**: Python path to the classifier class.

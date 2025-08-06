@@ -232,6 +232,7 @@ def find_active_channels(
 
     # perform one-way ANOVA for each channel
     n_channels = rest_samples.shape[1]
+    corrected_p_threshold = p_val_threshold / rest_samples.shape[2]  # Bonferroni correction
     active_channels = []
     max_lengths = []
     p_vals_all = []
@@ -244,12 +245,12 @@ def find_active_channels(
 
         p_vals = result.pvalue
 
-        significant_points = np.where(p_vals < p_val_threshold)[0]
+        significant_points = np.where(p_vals < corrected_p_threshold)[0]
 
         if len(significant_points) == 0:
             continue
 
-        max_len = get_max_length(np.where(p_vals < p_val_threshold)[0])
+        max_len = get_max_length(np.where(p_vals < corrected_p_threshold)[0])
 
         if max_len > length_threshold:
             active_channels.append(ch)

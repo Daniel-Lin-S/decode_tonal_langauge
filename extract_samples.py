@@ -8,7 +8,7 @@ import yaml
 import hashlib
 
 from data_loading.text_align import handle_textgrids, extract_ecog_audio
-from utils.config import dict_to_namespace
+from utils.config import dict_to_namespace, update_configuration
 
 
 def run(config: dict) -> None:
@@ -24,26 +24,20 @@ def run(config: dict) -> None:
     if not hasattr(params, "overwrite"):
         params.overwrite = False
 
-    output_dir_name = generate_output_dir_name(params.recording_dir, collection_cfg)
+    output_dir_name = generate_output_dir_name(
+        os.path.basename(params.recording_dir),
+        collection_cfg
+    )
+
     output_dir = os.path.join(params.output_dir, output_dir_name)
     os.makedirs(output_dir, exist_ok=True)
 
-    preprocessing_config_path = os.path.join(params.recording_dir, "config.yaml")
-    if os.path.exists(preprocessing_config_path):
-        with open(preprocessing_config_path, "r") as f:
-            preprocessing_config = yaml.safe_load(f)
-    else:
-        preprocessing_config = {}
-        print(f"Warning: Preprocessing config.yaml not found in {params.recording_dir}")
-
-    combined_config = {
-        "preprocessing": preprocessing_config,
-        "sample_collection": collection_cfg,
-    }
-
-    config_file_path = os.path.join(output_dir, "config.yaml")
-    with open(config_file_path, "w") as f:
-        yaml.dump(combined_config, f)
+    update_configuration(
+        output_path=os.path.join(output_dir, "config.yaml"),
+        previous_config_path=os.path.join(params.sample_dir, "config.yaml"),
+        new_module='sample_collection',
+        new_module_cfg=collection_cfg
+    )
 
     for subject_id, subject_params in params_config.get("subjects", {}).items():
         subject_path = os.path.join(params.recording_dir, f"subject_{subject_id}")
@@ -70,7 +64,6 @@ def run(config: dict) -> None:
             f'Extracting all samples from {subject_path} using textgrids from {textgrid_dir}'
             '\n ------------------------'
         )
-        
 
         intervals = handle_textgrids(
             textgrid_dir,
@@ -98,19 +91,15 @@ def run(config: dict) -> None:
         )
 
 
-def generate_output_dir_name(recording_dir: str, collection_cfg: dict) -> str:
+def generate_output_dir_name(base_name: str, collection_cfg: dict) -> str:
     """
     Generate a unique and human-readable name for the output directory
     based on the recording directory and sample extraction parameters.
     """
-    # Use the recording directory name as the readable part
-    readable_part = os.path.basename(recording_dir)
-
-    # Generate a hash based on the sample extraction parameters
     hash_input = yaml.dump(collection_cfg, sort_keys=True)
     hash_part = hashlib.md5(hash_input.encode()).hexdigest()[:6]
 
-    return f"{readable_part}__{hash_part}"
+    return f"{base_name}__{hash_part}"
 
 
 if __name__ == "__main__":

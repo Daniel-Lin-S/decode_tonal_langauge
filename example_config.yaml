@@ -23,21 +23,41 @@ preprocess:
 
     - module: preproccess.rereference
       params:
-        rereference_interval: [0.0, 25.0]   # Interval in seconds for rereferencing
+        rereference_interval: [0., 25.]   # Interval in seconds for rereferencing
+
+sample_collection:
+  module: extract_samples
+  params:
+    io:
+      recording_dir: processed/setup_1     # Directory with ECoG and audio files
+      output_dir: data/samples                                    # Output path for samples
+      textgrid_root: data                                         # Root directory for textgrid files
+    subjects:
+      1:
+        start_offset: 0.2                               # Offset (in seconds) to extract before the event
+        tier_list: ['success']                          # tiers in the text grid file to extract
+        blocks: [1, 2, 3]                               # blocks to extract
+        textgrid_dir: subject_1/annotations
+        rest_period: [0., 3.]                           # extract rest period for future processes
+        sample_length: 1.0                              # Length of each sample in seconds
+      2:
+        start_offset: 0.1
+        sample_length: 1.0
+        rest_period: [0., 5.]
+        textgrid_dir: subject_2/annotations
+    settings:
+      syllable_identifiers: [i, a]       # Identifiers for syllables in textgrid files.
 
 channel_selection_active:
   module: find_active_channels
   params:
     io:
-      recording_file_path: processed/npz/HS1_B1_ecog_hg_400Hz.npz  # Path to ECoG data
-      figure_dir: figures/active                                   # Directory for figures
-      output_file: configs/active_channels.json                    # JSON to save active channels
+      sample_dir: data/samples/setup_1               # Path to ECoG data
+      figure_dir: figures/active                        # Directory for saving figures
+      output_dir: configs/channel_selection             # Directory for saving active channels (json files)
     settings:
-      rest_recording_name: ecog_rest       # Name of rest recording in npz
-      erp_recording_name: ecog             # Name of ECoG recording
-      p_threshold: 0.001                   # P-value threshold for significance
-      consecutive_length_threshold: 50     # Minimum consecutive significant length
-      sampling_rate: 400                   # Sampling rate for plotting
+      p_threshold: 0.01                   # P-value threshold for significance
+      consecutive_length_threshold: 40     # Minimum consecutive significant length
 
 channel_selection_discriminative:
   module: find_discriminative_channels
@@ -57,21 +77,6 @@ channel_selection_discriminative:
       sampling_rate: 400                          # Sampling rate of recording
       onset_time: null                            # Onset time for plotting
       individual_figures: false                   # Save figures per channel
-
-sample_collection:
-  module: extract_samples
-  params:
-    io:
-      textgrid_dir: processed/annotation      # Directory containing TextGrid files
-      recording_dir: processed/npz            # Directory with ECoG and audio files
-      output_path: data/samples/samples.npz   # Output path for samples
-    settings:
-      audio_kwords: null      # Keywords to select audio files
-      ecog_kwords: null       # Keywords to select ECoG files
-      blocks: null            # List of block numbers to process
-      overwrite: false        # Overwrite output if it exists
-      rest_period: [0, 1]     # Rest period for referencing
-      syllable_identifiers: [i, a]  # Syllables to extract
 
 model:
   model: models.simple_classifiers.LogisticRegressionClassifier  # Python path to model class

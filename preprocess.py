@@ -56,8 +56,9 @@ def run(config: dict) -> None:
 
     # Save the configuration used for this setup
     config_file_path = os.path.join(setup_dir, 'config.yaml')
+    pre_configs = {'preprocess': pre_cfg}
     with open(config_file_path, 'w') as f:
-        yaml.dump(pre_cfg, f)
+        yaml.dump(pre_configs, f)
 
     if not hasattr(params, 'subject_ids'):
         params.subject_ids = [

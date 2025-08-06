@@ -329,9 +329,8 @@ def plot_discriminative_channel(
 
 
 def plot_rest_erp(
-        data: dict, rest_recording_name: str,
-        erp_recording_name: str, 
-        channel_idx: int,
+        rest_data: np.ndarray,
+        erp_data: np.ndarray,
         p_vals: list,
         p_val_threshold: float=0.05,
         sampling_rate: int=400,
@@ -366,8 +365,6 @@ def plot_rest_erp(
     -------
     None
     """
-    rest_data = data[rest_recording_name][:, channel_idx, :]
-    erp_data = data[erp_recording_name][:, channel_idx, :]
 
     if rest_data.shape[1] != erp_data.shape[1]:
         raise ValueError(
@@ -386,16 +383,15 @@ def plot_rest_erp(
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
     # Plot Rest and ERP activity
-    axes[0].plot(time, rest_mean, label=f'{rest_recording_name} (Rest)', color='blue')
+    axes[0].plot(time, rest_mean, label=f'Rest', color='blue')
     axes[0].fill_between(
         time, rest_mean - rest_sem, rest_mean + rest_sem, color='blue', alpha=0.2)
 
-    axes[0].plot(time, erp_mean, label=f'{erp_recording_name} (ERP)', color='orange')
+    axes[0].plot(time, erp_mean, label=f'ERP', color='orange')
     axes[0].fill_between(
         time, erp_mean - erp_sem, erp_mean + erp_sem, color='orange', alpha=0.2)
 
-    axes[0].set_title(f'Comparison of Rest and ERP Activity for Channel {channel_idx}',
-                      fontsize=16)
+    axes[0].set_title('Comparison of Rest and ERP Activity', fontsize=16)
     axes[0].set_xlabel('Time (s)', fontsize=14)
     axes[0].set_ylabel('Amplitude', fontsize=14)
     axes[0].legend()
