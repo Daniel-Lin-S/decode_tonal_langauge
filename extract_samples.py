@@ -4,68 +4,121 @@ Configuration is provided via YAML.
 """
 
 import os
+import yaml
+import hashlib
 
 from data_loading.text_align import handle_textgrids, extract_ecog_audio
 from utils.config import dict_to_namespace
 
 
-def run(config: dict, config_path: str | None = None) -> None:
-    """Extract samples based on configuration."""
+def run(config: dict) -> None:
+    """Extract samples from multiple subjects based on configuration."""
 
-    samp_cfg = config.get("sample_collection", {}).get("params", {})
+    collection_cfg = config.get("sample_collection", {})
+    params_config = collection_cfg.get("params", {})
     params_dict = {}
-    for section in ("io", "experiment", "settings", "training"):
-        params_dict.update(samp_cfg.get(section, {}))
+    for section in ("io", "settings"):
+        params_dict.update(params_config.get(section, {}))
     params = dict_to_namespace(params_dict)
 
-    rest_period = tuple(params.rest_period)
-    syllable_identifiers = params.syllable_identifiers
+    if not hasattr(params, "overwrite"):
+        params.overwrite = False
 
-    if os.path.exists(params.output_path) and not params.overwrite:
-        print(f"Output file {params.output_path} already exists. Skipping ...")
-        return
+    output_dir_name = generate_output_dir_name(params.recording_dir, collection_cfg)
+    output_dir = os.path.join(params.output_dir, output_dir_name)
+    os.makedirs(output_dir, exist_ok=True)
 
-    print(
-        '----------- '
-        f'Extracting all samples from {params.textgrid_dir} and {params.recording_dir}'
-        ' -----------'
-    )
+    preprocessing_config_path = os.path.join(params.recording_dir, "config.yaml")
+    if os.path.exists(preprocessing_config_path):
+        with open(preprocessing_config_path, "r") as f:
+            preprocessing_config = yaml.safe_load(f)
+    else:
+        preprocessing_config = {}
+        print(f"Warning: Preprocessing config.yaml not found in {params.recording_dir}")
 
-    output_dir = os.path.dirname(params.output_path)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print(f"Created output directory: {output_dir}")
+    combined_config = {
+        "preprocessing": preprocessing_config,
+        "sample_collection": collection_cfg,
+    }
 
-    intervals = handle_textgrids(
-        params.textgrid_dir,
-        start_offset=0.2,
-        tier_list=['success'],
-        blocks=params.blocks,
-    )
-    if len(intervals) == 0:
-        raise ValueError(
-            "No intervals found in the TextGrid files. "
-            "Check the directory and file naming conventions."
-            f"Target blocks: {params.blocks if params.blocks else 'all'}"
+    config_file_path = os.path.join(output_dir, "config.yaml")
+    with open(config_file_path, "w") as f:
+        yaml.dump(combined_config, f)
+
+    for subject_id, subject_params in params_config.get("subjects", {}).items():
+        subject_path = os.path.join(params.recording_dir, f"subject_{subject_id}")
+        if not os.path.exists(subject_path):
+            print(
+                f"Recording directory {subject_path} not found. Skipping..."
+            )
+            continue
+
+        subject_output_path = os.path.join(
+            output_dir, f"subject_{subject_id}.npz"
+        )
+        if os.path.exists(subject_output_path) and not params.overwrite:
+            print(f"Output file {subject_output_path} already exists. Skipping ...")
+            continue
+
+        textgrid_dir = os.path.join(params.textgrid_root, subject_params["textgrid_dir"])
+        if not os.path.exists(textgrid_dir):
+            print(f"TextGrid directory {textgrid_dir} not found. Skipping...")
+            continue
+
+        print(
+            '------------------------ \n'
+            f'Extracting all samples from {subject_path} using textgrids from {textgrid_dir}'
+            '\n ------------------------'
+        )
+        
+
+        intervals = handle_textgrids(
+            textgrid_dir,
+            start_offset=subject_params.get("start_offset", 0.0),
+            tier_list=subject_params.get("tier_list", None),
+            blocks=subject_params.get("blocks", None),
         )
 
-    print(f"Extracted intervals from TextGrid files: {len(intervals)} blocks found.")
+        if len(intervals) == 0:
+            raise ValueError(
+                "No intervals found in the TextGrid files. "
+                "Check the directory and file naming conventions."
+                f"Target blocks: {params.blocks if params.blocks else 'all'}"
+            )
 
-    extract_ecog_audio(
-        intervals,
-        params.recording_dir,
-        syllable_identifiers,
-        audio_kwords=params.audio_kwords,
-        ecog_kwords=params.ecog_kwords,
-        output_path=params.output_path,
-        rest_period=rest_period,
-    )
+        print(f"Extracted intervals from TextGrid files: {len(intervals)} blocks found.")
+
+        extract_ecog_audio(
+            intervals,
+            subject_path,
+            syllables=params.syllable_identifiers,
+            length=subject_params["sample_length"],
+            output_path=subject_output_path,
+            rest_period=tuple(subject_params["rest_period"]),
+        )
+
+
+def generate_output_dir_name(recording_dir: str, collection_cfg: dict) -> str:
+    """
+    Generate a unique and human-readable name for the output directory
+    based on the recording directory and sample extraction parameters.
+    """
+    # Use the recording directory name as the readable part
+    readable_part = os.path.basename(recording_dir)
+
+    # Generate a hash based on the sample extraction parameters
+    hash_input = yaml.dump(collection_cfg, sort_keys=True)
+    hash_part = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+
+    return f"{readable_part}__{hash_part}"
 
 
 if __name__ == "__main__":
     import sys
+    from utils.config import load_config
+
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python extract_samples.py <config.yaml>")
-    from utils.config import load_config
+    
     cfg = load_config(sys.argv[1])
-    run(cfg, sys.argv[1])
+    run(cfg)

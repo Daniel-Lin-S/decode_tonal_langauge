@@ -35,9 +35,8 @@ import tdt
 import numpy as np
 import yaml
 import importlib
-from utils.config import dict_to_namespace, load_config
+from utils.config import dict_to_namespace
 
-import sys
 import hashlib
 
 
@@ -161,6 +160,9 @@ def generate_setup_name(pre_cfg: dict) -> str:
 
 
 if __name__ == "__main__":
+    import sys
+    from utils.config import load_config
+
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python preprocess.py <config.yaml>")
     cfg = load_config(sys.argv[1])
