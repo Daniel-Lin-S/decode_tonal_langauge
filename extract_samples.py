@@ -1,132 +1,113 @@
 """
-Align ECoG and audio samples using TextGrid files marking the intervals
-for each read word or syllable.
-
-The name of each interval in the TextGrid should have format
-[tone][syllable_identifier],
-where the tone is the digit id for tone and syllable_identifier is a short string
-marking the syllable spoken in the interval, e.g. "0i", "1a", etc.
- 
-Required hyper-parameters from the JSON file:
-- rest_period: a tuple (start, end) indicating the rest period for ECoG extraction.
-  will be used for referencing and active channel selection.
-- syllable_identifiers: a list of syllable identifiers to be used for extracting
-  syllables in the TextGrid files.
-
-File structure of each saved npz file:
-- 'ecog': The ECoG data within each interval (event), a numpy array of shape 
-    (n_samples, n_channels, n_timepoints).
-    where n_samples stands for the number of intervals.
-- 'audio': The audio data within each interval, a numpy array of shape
-    (n_samples, n_timepoints).
-- 'syllable': The syllable spoken in each sample, shape (n_samples,)
-- 'tone': The tone id for each sample, shape (n_samples,).
-- 'ecog_rest': The ECoG data during the rest period, a numpy array of shape
-    (n_rest_samples, n_channels, n_timepoints).
+Align ECoG and audio samples using TextGrid annotations.
+Configuration is provided via YAML.
 """
 
-from data_loading.text_align import handle_textgrids, extract_ecog_audio
 import os
-import argparse
-import json
+import yaml
+import hashlib
+
+from data_loading.text_align import handle_textgrids, extract_ecog_audio
+from utils.config import dict_to_namespace, update_configuration
 
 
-parser = argparse.ArgumentParser(
-    description = "Extract ECoG and audio samples for each onset based on the textgrids")
-# --------- I/O ---------
-parser.add_argument(
-    '--textgrid_dir', default='processed/annotation', type=str,
-    help='Directory containing TextGrid files (for all blocks).'
-    'Each .TextGrid file must have a naming convention that includes '
-    'a block number at the end, i.e. "_B[block_number].TextGrid".'
-)
-parser.add_argument(
-    '--recording_dir', default='processed/npz', type=str,
-    help='Directory containing ECoG and audio files (for all blocks).'
-    'Should have ECoG files with "ecog" in the name and '
-    'audio files with "sound" in the name.'
-    'Each file must start with "B[block_number]".'
-)
-parser.add_argument(
-    '--config_file', required=True, type=str,
-    help='Path to the JSON file with necessary hyperparameters.'
-)
-parser.add_argument(
-    '--audio_kwords', default=None, type=str, nargs='+',
-    help='List of keywords to identify audio files. '
-    'only files containing these keywords will be considered for audio extraction. '
-    'Defaults to None.'
-)
-parser.add_argument(
-    '--ecog_kwords', default=None, type=str, nargs='+',
-    help='List of keywords to identify ECoG files. '
-    'only files containing these keywords will be considered for ECoG extraction. '
-    'Defaults to None.'
-)
-parser.add_argument(
-    '--output_path', default='data/samples/samples.npz', type=str,
-    help='Path to save the output .npz file containing the extracted samples.'
-)
-parser.add_argument(
-    '--blocks', nargs='+', type=int, default=None,
-    help='List of block numbers to process. If None, all blocks will be processed.'
-    'This is useful when there are trial blocks irrelevant to the current experiments. '
-)
-parser.add_argument(
-    '--overwrite', action='store_true',
-    help='If set, will overwrite the output file if it already exists.'
-)
+def run(config: dict) -> None:
+    """Extract samples from multiple subjects based on configuration."""
 
+    collection_cfg = config.get("sample_collection", {})
+    params_config = collection_cfg.get("params", {})
+    params_dict = {}
+    for section in ("io", "settings"):
+        params_dict.update(params_config.get(section, {}))
+    params = dict_to_namespace(params_dict)
 
-args = parser.parse_args()
+    if not hasattr(params, "overwrite"):
+        params.overwrite = False
 
-if __name__ == '__main__':
-    with open(args.config_file, 'r') as f:
-        config = json.load(f)
-    
-    rest_period = config['rest_period']
-    if len(rest_period) != 2 or not all(
-        isinstance(x, (int, float)) for x in rest_period):
-        raise ValueError(
-            "rest_period must be a list of two floats (start, end). "
-            f"Received: {rest_period}"
-        )
-
-    syllable_identifiers = config['syllable_identifiers']
-    rest_period = tuple(config['rest_period'])
-
-    if os.path.exists(args.output_path) and not args.overwrite:
-        print(f"Output file {args.output_path} already exists. "
-              "Skipping ...")
-        exit(1)
-
-    print('----------- '
-        f'Extracting all samples from {args.textgrid_dir} and {args.recording_dir}'
-        ' -----------')
-
-    output_dir = os.path.dirname(args.output_path)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print(f"Created output directory: {output_dir}")
-
-    intervals = handle_textgrids(
-        args.textgrid_dir, start_offset=0.2, tier_list=['success'],
-        blocks=args.blocks)
-    if len(intervals) == 0:
-        raise ValueError(
-            "No intervals found in the TextGrid files. "
-            "Check the directory and file naming conventions."
-            f"Target blocks: {args.blocks if args.blocks else 'all'}"
-        )
-
-    print(f"Extracted intervals from TextGrid files: {len(intervals)} blocks found.")
-    block_numbers = list(intervals.keys())
-
-    extract_ecog_audio(
-        intervals, args.recording_dir,
-        syllable_identifiers,
-        audio_kwords=args.audio_kwords,
-        ecog_kwords=args.ecog_kwords,
-        output_path=args.output_path,
-        rest_period=rest_period
+    output_dir_name = generate_output_dir_name(
+        os.path.basename(params.recording_dir),
+        collection_cfg
     )
+
+    output_dir = os.path.join(params.output_dir, output_dir_name)
+    os.makedirs(output_dir, exist_ok=True)
+
+    update_configuration(
+        output_path=os.path.join(output_dir, "config.yaml"),
+        previous_config_path=os.path.join(params.sample_dir, "config.yaml"),
+        new_module='sample_collection',
+        new_module_cfg=collection_cfg
+    )
+
+    for subject_id, subject_params in params_config.get("subjects", {}).items():
+        subject_path = os.path.join(params.recording_dir, f"subject_{subject_id}")
+        if not os.path.exists(subject_path):
+            print(
+                f"Recording directory {subject_path} not found. Skipping..."
+            )
+            continue
+
+        subject_output_path = os.path.join(
+            output_dir, f"subject_{subject_id}.npz"
+        )
+        if os.path.exists(subject_output_path) and not params.overwrite:
+            print(f"Output file {subject_output_path} already exists. Skipping ...")
+            continue
+
+        textgrid_dir = os.path.join(params.textgrid_root, subject_params["textgrid_dir"])
+        if not os.path.exists(textgrid_dir):
+            print(f"TextGrid directory {textgrid_dir} not found. Skipping...")
+            continue
+
+        print(
+            '------------------------ \n'
+            f'Extracting all samples from {subject_path} using textgrids from {textgrid_dir}'
+            '\n ------------------------'
+        )
+
+        intervals = handle_textgrids(
+            textgrid_dir,
+            start_offset=subject_params.get("start_offset", 0.0),
+            tier_list=subject_params.get("tier_list", None),
+            blocks=subject_params.get("blocks", None),
+        )
+
+        if len(intervals) == 0:
+            raise ValueError(
+                "No intervals found in the TextGrid files. "
+                "Check the directory and file naming conventions."
+                f"Target blocks: {params.blocks if params.blocks else 'all'}"
+            )
+
+        print(f"Extracted intervals from TextGrid files: {len(intervals)} blocks found.")
+
+        extract_ecog_audio(
+            intervals,
+            subject_path,
+            syllables=params.syllable_identifiers,
+            length=subject_params["sample_length"],
+            output_path=subject_output_path,
+            rest_period=tuple(subject_params["rest_period"]),
+        )
+
+
+def generate_output_dir_name(base_name: str, collection_cfg: dict) -> str:
+    """
+    Generate a unique and human-readable name for the output directory
+    based on the recording directory and sample extraction parameters.
+    """
+    hash_input = yaml.dump(collection_cfg, sort_keys=True)
+    hash_part = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+
+    return f"{base_name}__{hash_part}"
+
+
+if __name__ == "__main__":
+    import sys
+    from utils.config import load_config
+
+    if len(sys.argv) != 2:
+        raise SystemExit("Usage: python extract_samples.py <config.yaml>")
+    
+    cfg = load_config(sys.argv[1])
+    run(cfg)

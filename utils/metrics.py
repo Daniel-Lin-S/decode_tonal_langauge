@@ -1,17 +1,16 @@
 import numpy as np
-from sklearn.metrics import (
-    accuracy_score, f1_score, cohen_kappa_score, confusion_matrix
-)
+from sklearn import metrics as skmetrics
 
 
-def compute_joint_metrics(
+def compute_classification_metrics_joint(
         all_true: dict, all_preds: dict,
-        metrics: list = ['accuracy']
+        metrics: list = ['accuracy'],
+        verbose: bool = False
     ) -> dict:
     """
     Compute joint metrics (e.g., accuracy, F1 score)
-    based on true and predicted labels for multiple targets.
-    Only suitable for classification tasks.
+    for classification tasks based on true and predicted labels
+    for multiple targets.
 
     Parameters
     ----------
@@ -22,9 +21,10 @@ def compute_joint_metrics(
         A dictionary where keys are target variable names
         and values are arrays of predicted labels.
     metrics : list, optional
-        A list of metrics to compute. \n
-        Supported metrics: ['accuracy', 'f1', 'cohen's kappa'].
-        Default is ['accuracy'].
+        A list of metric names to compute. Names should correspond
+        to functions in ``sklearn.metrics`` (e.g. 'accuracy',
+        'f1', 'precision', 'recall', 'cohen_kappa',
+        'confusion_matrix'). Default is ['accuracy'].
 
     Returns
     -------
@@ -71,35 +71,34 @@ def compute_joint_metrics(
         ),
         axis=1
     )
-    print('Unique labels in joint truth: {}'.format(
-        set(joint_true)
-    ), flush=True)
-    print(
-        'Unique labels in joint predictions: {}'.format(set(joint_preds))
-        , flush=True)
 
-    if 'accuracy' in metrics:
-        results['accuracy'] = accuracy_score(joint_true, joint_preds)
+    if verbose:
+        print('Unique labels in joint truth: {}'.format(
+            set(joint_true)
+        ), flush=True)
+        print(
+            'Unique labels in joint predictions: {}'.format(set(joint_preds))
+            , flush=True)
 
-    if 'f1_score' in metrics:
-        results['f1_score'] = f1_score(
-            joint_true, joint_preds,
-            average='weighted'
-        )
+    metric_funcs = {
+        'accuracy': skmetrics.accuracy_score,
+        'f1': lambda y_true, y_pred: skmetrics.f1_score(y_true, y_pred, average='weighted'),
+        'precision': lambda y_true, y_pred: skmetrics.precision_score(y_true, y_pred, average='weighted'),
+        'recall': lambda y_true, y_pred: skmetrics.recall_score(y_true, y_pred, average='weighted'),
+        'cohen_kappa': skmetrics.cohen_kappa_score,
+        'confusion_matrix': skmetrics.confusion_matrix
+    }
 
-    if 'cohen_kappa' in metrics:
-        results['cohen_kappa'] = cohen_kappa_score(
-            joint_true, joint_preds
-        )
-
-    if 'confusion_matrix' in metrics:
-        results['confusion_matrix'] = confusion_matrix(
-            joint_true, joint_preds
-        )
-
-        print('Shape of confusion matrix: {}'.format(
-            results['confusion_matrix'].shape,
-            flush=True
-        ))
+    for m in metrics:
+        if m in metric_funcs:
+            results[m] = metric_funcs[m](joint_true, joint_preds)
+        else:
+            try:
+                results[m] = getattr(skmetrics, m)(joint_true, joint_preds)
+            except AttributeError:
+                raise ValueError(
+                    f"Metric '{m}' is not recognized in sklearn.metrics, and "
+                    f"not part of the supported metrics: {list(metric_funcs.keys())}."
+                )
 
     return results

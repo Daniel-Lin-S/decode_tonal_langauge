@@ -190,8 +190,6 @@ def extract_ecog_audio(
         intervals: Dict[int, pd.DataFrame],
         recording_dir: str,
         syllables: List[str],
-        ecog_kwords: Optional[List[str]]=None,
-        audio_kwords: Optional[List[str]]=None,
         length: float = 1.0,
         output_path: Optional[str]=None,
         rest_period: Optional[Tuple[float]] = None,
@@ -217,16 +215,6 @@ def extract_ecog_audio(
     syllables : List[str]
         List of syllables to map to the intervals.
         Syllable at index i will be encoded as i in the output.
-    ecog_kwords : List[str], optional
-        List of keywords to filter ECoG files.
-        All keywords must be present in the file name
-        for the file to be considered.
-        If None, all ECoG files will be considered.
-    audio_kwords : List[str], optional
-        List of keywords to filter audio files.
-        All keywords must be present in the file name
-        for the file to be considered.
-        If None, all audio files will be considered.
     length : float, optional
         Length of the samples to extract, in seconds.
         Defaults to 1.0.
@@ -242,7 +230,9 @@ def extract_ecog_audio(
     Dict[str, np.ndarray]
         Dictionary containing the extracted samples:
         - 'ecog': ECoG samples, shape (n_samples, n_channels, sample_length)
+        - 'ecog_sf': Sampling frequency of ECoG data, scalar
         - 'audio': Audio samples, shape (n_samples, sample_length)
+        - 'audio_sf': Sampling frequency of audio data, scalar
         - 'syllable': Syllable labels, shape (n_samples,)
         - 'tone': Tone labels, shape (n_samples,)
         - 'ecog_rest': ECoG rest samples (if rest_period is given),
@@ -257,11 +247,8 @@ def extract_ecog_audio(
 
     print('Syllable mapping used: ', dict(enumerate(syllables)))
 
-    ecog_kwords = ecog_kwords.append('ecog')
-    audio_kwords = audio_kwords.append('sound')
-
     for file in os.listdir(recording_dir):
-        if match_filename(file, recording_format, ecog_kwords):
+        if match_filename(file, recording_format, ['ecog']):
             block = extract_block_id(file)
             if block not in intervals:
                 continue
@@ -352,7 +339,7 @@ def extract_ecog_audio(
                 ecog_rest_samples[block] = np.array(
                     ecog_rest_samples[block])
 
-        elif match_filename(file, recording_format, audio_kwords):  # Audio Recording
+        elif match_filename(file, recording_format, ['sound']):  # Audio Recording
             block = extract_block_id(file)
             if block not in intervals:
                 continue
@@ -458,7 +445,9 @@ def extract_ecog_audio(
     # save as npz file
     output_data = {
         'ecog': all_erp_samples,
+        'ecog_sf': ecog_sampling_rate,
         'audio': all_audio_samples,
+        'audio_sf': audio_sampling_rate,
         'syllable': all_syllable_labels,
         'tone': all_tone_labels
     }

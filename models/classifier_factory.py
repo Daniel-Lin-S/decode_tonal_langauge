@@ -1,96 +1,56 @@
-"""Build classifier models for the training scripts."""
+"""Build classifier models for the training scripts using dynamic imports."""
 
 from typing import Dict
+from importlib import import_module
+import inspect
 
 from .classifier import ClassifierModel
-from .simple_classifiers import (
-    LogisticRegressionClassifier,
-    ShallowNNClassifier
-)
-from .deep_classifiers import (
-    CNNClassifier,
-    CNNRNNClassifier
-)
-from .cbramod_classifier import CBraModClassifier
-
-
-MODEL_CHOICES = ['logistic', 'CNN', 'CNN-RNN', 'ShallowNN', 'CBraMod']
 
 
 def get_classifier_by_name(
-        model_name: str,
+        model_path: str,
         device: str,
         n_classes: int,
         n_channels: int,
         seq_length: int,
         classifier_kwargs: Dict | None = None
     ) -> ClassifierModel:
-    """
-    Build the classifier model based on the specified parameters.
+    """Dynamically import and build a classifier model.
 
     Parameters
     ----------
-    model_name : str
-        The name of the model to build. 
-        Choices are 'logistic', 'CNN', 'CNN-RNN', 'ShallowNN', 'CBraMod'.
+    model_path : str
+        Full python path to the classifier class.
     device : str
-        The device to use for training ('cpu' or 'cuda').
-        If 'cuda', it will use the first available GPU.
-        If 'cpu', it will use the CPU.
+        Device to place the model on.
     n_classes : int
-        The number of classes for classification.
+        Number of output classes.
     n_channels : int
-        The number of channels in the input data.
+        Number of input channels.
     seq_length : int
-        The length of the input sequence (number of timepoints).
-    classifier_kwargs : dict, optional
-        Additional keyword arguments for the classifier model.
-        Default is an empty dictionary.
-    
-    Return
-    ------
-    ClassifierModel
-        The classifier model (nn.Module) built.
+        Length of the input sequence.
+    classifier_kwargs : Dict | None
+        Additional keyword arguments passed to the model constructor.
     """
+    classifier_kwargs = classifier_kwargs or {}
 
-    if model_name == 'logistic':
-        model = LogisticRegressionClassifier(
-                    input_dim=n_channels * seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(device)
-    elif model_name == 'CNN':
-        model = CNNClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(device)
-    elif model_name == 'ShallowNN':
-        model = ShallowNNClassifier(
-                    input_dim=n_channels * seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(device)
-    elif model_name == 'CNN-RNN':
-        model = CNNRNNClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    **classifier_kwargs
-                ).to(device)
-    elif model_name == 'CBraMod':
-        model = CBraModClassifier(
-                    input_channels=n_channels,
-                    input_length=seq_length,
-                    n_classes=n_classes,
-                    device=device,
-                    **classifier_kwargs
-                ).to(device)
-    else:
-        raise ValueError(
-                    f"Invalid model name '{model_name}'. "
-                    f"Choose from {MODEL_CHOICES}."
-                )
-        
+    module_name, class_name = model_path.rsplit('.', 1)
+    module = import_module(module_name)
+    cls = getattr(module, class_name)
+
+    base_kwargs = {
+        'n_classes': n_classes,
+        'n_channels': n_channels,
+        'seq_length': seq_length,
+        'input_channels': n_channels,
+        'input_length': seq_length,
+        'input_dim': n_channels * seq_length,
+    }
+    base_kwargs.update(classifier_kwargs)
+
+    # Filter kwargs based on the model signature
+    sig = inspect.signature(cls)
+    allowed_kwargs = {k: v for k, v in base_kwargs.items() if k in sig.parameters}
+
+    model = cls(**allowed_kwargs).to(device)
     return model

@@ -1,0 +1,122 @@
+dataset:
+  syllable_labels: ["mi", "ma"]          # Labels for syllable targets
+  tone_labels: ["tone1", "tone2", "tone3", "tone4"]        # Labels for tone targets
+
+preprocess:
+  module: preprocess
+  io:
+    root_dir: data/raw
+    subject_dirs:
+      - Sub1/tdt
+      - Sub2/tdt
+    subject_ids: [1, 2]                    # Subject IDs for naming files
+    output_dir: data/processed
+  steps:
+    - module: preproccess.downsample
+      params:
+        downsample_freq: 400
+    
+    - module: preproccess.frequency_filter
+      params:
+        freq_ranges: [[70, 150]]            # Frequency ranges to filter
+        envelope: true                      # Apply Hilbert envelope filtering
+
+    - module: preproccess.rereference
+      params:
+        rereference_interval: [0., 25.]   # Interval in seconds for rereferencing
+
+sample_collection:
+  module: extract_samples
+  params:
+    io:
+      recording_dir: processed/setup_1     # Directory with ECoG and audio files
+      output_dir: data/samples                                    # Output path for samples
+      textgrid_root: data                                         # Root directory for textgrid files
+    subjects:
+      1:
+        start_offset: 0.2                               # Offset (in seconds) to extract before the event
+        tier_list: ['success']                          # tiers in the text grid file to extract
+        blocks: [1, 2, 3]                               # blocks to extract
+        textgrid_dir: subject_1/annotations
+        rest_period: [0., 3.]                           # extract rest period for future processes
+        sample_length: 1.0                              # Length of each sample in seconds
+      2:
+        start_offset: 0.1
+        sample_length: 1.0
+        rest_period: [0., 5.]
+        textgrid_dir: subject_2/annotations
+    settings:
+      syllable_identifiers: [i, a]       # Identifiers for syllables in textgrid files.
+
+channel_selection:
+  module: channel_selection
+  io:
+    sample_dir: data/samples
+    figure_dir: figures
+    output_dir: configs/channel_selection
+    channel_locations_file: data/channel_locs.mat               # Electrode location file
+    channel_locations_key: locs                                 # Key for locations in mat file
+  selections:
+    - module: channel_selection.active
+      selection_name: active_channels
+      params:
+        p_threshold: 0.01                    # P-value threshold for significance
+        active_time_threshold: 0.1           # Minimum consecutive significant length
+        rest_name: ecog_rest
+        erp_name: ecog
+    - module: channel_selection.discriminative
+      selection_name: syllable_discriminative
+      params:
+        p_threshold: 0.01
+        active_time_threshold: 0.1            # Min significant lengths
+        onset_time: 0.2                       # Onset time for plotting
+        label: syllable
+        recording_name: ecog                  # Recording name in npz file
+    - module: channel_selection.discriminative
+      selection_name: tone_discriminative
+      params:
+        p_threshold: 0.01
+        active_time_threshold: 0.1            # Min significant lengths
+        onset_time: 0.2                       # Onset time for plotting
+        label: tone
+        recording_name: ecog                  # Recording name in npz file
+
+model:
+  model: models.simple_classifiers.LogisticRegressionClassifier  # Python path to model class
+  model_name: logistic                                           # Short model identifier
+  model_kwargs: {}
+
+training:
+  module: train_classifier
+  params:
+    io:
+      sample_path: data/samples/samples.npz   # Path to training samples
+      figure_dir: figures                     # Directory for output figures
+      channel_file: null                      # Optional path to selected channels
+      result_file: results.csv                # CSV to log results
+      model_dir: null                         # Directory to save trained models
+      log_dir: logs                           # Directory for tensorboard logs
+    experiment:
+      subject_id: 1
+      targets: ["syllable"]
+      separate_models: false
+      seed: 42
+      repeat: 1
+      verbose: 1
+      device: cpu
+    training:
+      train_ratio: 0.7
+      vali_ratio: 0.1
+      test_ratio: 0.2
+      batch_size: 64
+      epochs: 10
+      lr: 0.0005
+      patience: 5
+      log_every_n_steps: 10
+
+evaluation:
+  metrics: [accuracy, f1_score, confusion_matrix]  # Metrics to compute
+  aggregates: [mean, std]                          # Aggregation methods across seeds
+
+visualisation:
+  module: null
