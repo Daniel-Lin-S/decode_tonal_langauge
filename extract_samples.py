@@ -6,6 +6,8 @@ Configuration is provided via YAML.
 import os
 import yaml
 import hashlib
+import numpy as np
+import matplotlib.pyplot as plt
 
 from data_loading.text_align import handle_textgrids, extract_ecog_audio
 from utils.config import dict_to_namespace, update_configuration
@@ -31,6 +33,9 @@ def run(config: dict) -> None:
 
     output_dir = os.path.join(params.output_dir, output_dir_name)
     os.makedirs(output_dir, exist_ok=True)
+
+    figure_root = os.path.join(output_dir, 'figures')
+    os.makedirs(figure_root, exist_ok=True)
 
     update_configuration(
         output_path=os.path.join(output_dir, "config.yaml"),
@@ -80,6 +85,37 @@ def run(config: dict) -> None:
             )
 
         print(f"Extracted intervals from TextGrid files: {len(intervals)} blocks found.")
+
+        if intervals:
+            block_id, block_df = next(iter(intervals.items()))
+            if not block_df.empty:
+                interval_row = block_df.sample(1).iloc[0]
+                ecog_path = os.path.join(subject_path, f"B{block_id}_ecog.npz")
+                if os.path.exists(ecog_path):
+                    ecog = np.load(ecog_path)
+                    signal = ecog['data']
+                    sf = int(ecog['sf'])
+                    ch_idx = np.random.randint(0, signal.shape[0])
+                    start_time = max(interval_row['start'] - 0.5, 0)
+                    end_time = interval_row['end'] + 0.5
+                    start_idx = int(start_time * sf)
+                    end_idx = int(end_time * sf)
+                    time = np.arange(start_idx, end_idx) / sf
+                    fig_dir = os.path.join(figure_root, f'subject_{subject_id}')
+                    os.makedirs(fig_dir, exist_ok=True)
+                    plt.figure()
+                    plt.plot(time, signal[ch_idx, start_idx:end_idx])
+                    plt.axvline(interval_row['start'], color='g', linestyle='--', label='onset')
+                    plt.axvline(interval_row['end'], color='r', linestyle='--', label='offset')
+                    plt.xlabel('Time (s)')
+                    plt.ylabel('Amplitude')
+                    plt.title(
+                        f'Subject {subject_id} Block {block_id} Channel {ch_idx}'
+                    )
+                    plt.legend()
+                    fig_path = os.path.join(fig_dir, f'block_{block_id}_event.png')
+                    plt.savefig(fig_path)
+                    plt.close()
 
         extract_ecog_audio(
             intervals,
