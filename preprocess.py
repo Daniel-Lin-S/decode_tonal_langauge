@@ -143,49 +143,14 @@ def run(config: dict) -> None:
                 module = importlib.import_module(module_name)
                 data = module.run(data, block_params)
 
-                after_freq = block_params.signal_freq
-
                 if data.ndim == 2:
-                    ch_idx = np.random.randint(0, data.shape[0])
-                    max_time = min(
-                        before_data.shape[1] / before_freq,
-                        data.shape[1] / after_freq
+                    visualise_preprocessing(
+                        before_data, before_freq, data,
+                        block_params, block_figure_dir,
+                        i, module_name,
+                        num_channels=5,
+                        duration=1.0
                     )
-                    if max_time > 1.0:
-                        duration = 1.0
-                    else:
-                        duration = max_time
-                    start_time = np.random.uniform(0, max_time - duration)
-                    end_time = start_time + duration
-                    before_slice = before_data[
-                        ch_idx,
-                        int(start_time * before_freq):int(end_time * before_freq)
-                    ]
-                    after_slice = data[
-                        ch_idx,
-                        int(start_time * after_freq):int(end_time * after_freq)
-                    ]
-                    time_before = np.linspace(
-                        start_time, end_time, before_slice.shape[0], endpoint=False
-                    )
-                    time_after = np.linspace(
-                        start_time, end_time, after_slice.shape[0], endpoint=False
-                    )
-                    fig_path = os.path.join(
-                        block_figure_dir,
-                        f'step{i+1}_{module_name.split(".")[-1]}.png'
-                    )
-                    plt.figure()
-                    plt.plot(time_before, before_slice, label='before')
-                    plt.plot(time_after, after_slice, label='after')
-                    plt.xlabel('Time (s)')
-                    plt.ylabel('Amplitude')
-                    plt.title(
-                        f'{module_name.split(".")[-1]} - channel {ch_idx}'
-                    )
-                    plt.legend()
-                    plt.savefig(fig_path)
-                    plt.close()
 
             if not os.path.exists(ecog_file):
                 np.savez(ecog_file, data=data, sf=block_params.signal_freq)
@@ -214,6 +179,85 @@ def generate_setup_name(pre_cfg: dict) -> str:
 
     # ensure uniqueness and avoid overly long names
     return f"{readable_name}_{hash_part}"
+
+
+def visualise_preprocessing(
+    before_data: np.ndarray,
+    before_freq: float,
+    after_data: np.ndarray,
+    block_params: object,
+    block_figure_dir: str,
+    step_index: int,
+    module_name: str,
+    num_channels: int,
+    duration: float
+) -> None:
+    """
+    Visualize the effect of preprocessing on multiple channels.
+
+    Args:
+        before_data (np.ndarray): Data before preprocessing (channels x timepoints).
+        after_data (np.ndarray): Data after preprocessing (channels x timepoints).
+        block_params (object): Block parameters containing sampling frequency.
+        block_figure_dir (str): Directory to save the figure.
+        step_index (int): Index of the preprocessing step.
+        module_name (str): Name of the preprocessing module.
+        num_channels (int): Number of random channels to plot.
+        duration (float): Duration of the signal to plot (in seconds).
+    """
+    after_freq = block_params.signal_freq
+
+    max_time = min(
+        before_data.shape[1] / before_freq,
+        after_data.shape[1] / after_freq
+    )
+    duration = min(duration, max_time)
+    start_time = np.random.uniform(0, max_time - duration)
+    end_time = start_time + duration
+
+    fig, ax = plt.subplots(num_channels, 1, figsize=(10, 4 * num_channels), sharex=True)
+    if num_channels == 1:
+        ax = [ax]  # Ensure ax is iterable for a single channel
+
+    for i in range(num_channels):
+        ch_idx = np.random.randint(0, before_data.shape[0])
+        before_slice = before_data[
+            ch_idx,
+            int(start_time * before_freq):int(end_time * before_freq)
+        ]
+        after_slice = after_data[
+            ch_idx,
+            int(start_time * after_freq):int(end_time * after_freq)
+        ]
+        time_before = np.linspace(
+            start_time, end_time, before_slice.shape[0], endpoint=False
+        )
+        time_after = np.linspace(
+            start_time, end_time, after_slice.shape[0], endpoint=False
+        )
+
+        ax[i].plot(time_before, before_slice, label='before', alpha=0.7)
+        ax[i].plot(time_after, after_slice, label='after', alpha=0.7)
+        ax[i].set_title(f'Channel {ch_idx}', fontsize=18)
+        ax[i].set_ylabel('Amplitude', fontsize=14)
+        ax[i].legend(fontsize=12)
+
+    ax[-1].set_xlabel('Time (s)', fontsize=14)
+    fig.suptitle(
+        f'{module_name.split(".")[-1]} - Preprocessing Step {step_index + 1}',
+        fontsize=20
+    )
+
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.9)
+
+    fig_path = os.path.join(
+        block_figure_dir,
+        f'step{step_index + 1}_{module_name.split(".")[-1]}.png'
+    )
+    fig.savefig(fig_path, dpi=500)
+    plt.close(fig)
+
 
 
 if __name__ == "__main__":
