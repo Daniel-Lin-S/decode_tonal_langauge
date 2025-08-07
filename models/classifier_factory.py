@@ -13,7 +13,7 @@ def get_classifier_by_name(
         n_classes: int,
         n_channels: int,
         seq_length: int,
-        classifier_kwargs: Dict | None = None
+        classifier_kwargs: Dict={}
     ) -> ClassifierModel:
     """Dynamically import and build a classifier model.
 
@@ -46,7 +46,9 @@ def get_classifier_by_name(
         'input_length': seq_length,
         'input_dim': n_channels * seq_length,
     }
-    base_kwargs.update(classifier_kwargs)
+
+    if classifier_kwargs:
+        base_kwargs.update(classifier_kwargs)
 
     # Filter kwargs based on the model signature
     sig = inspect.signature(cls)

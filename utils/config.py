@@ -11,10 +11,16 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def dict_to_namespace(d):
+def dict_to_namespace(d, exclude_keys=None):
     """Recursively convert a dictionary into an argparse.Namespace."""
+    if exclude_keys is None:
+        exclude_keys = set()
+
     if isinstance(d, dict):
-        return Namespace(**{k: dict_to_namespace(v) for k, v in d.items()})
+        return Namespace(
+            **{k: dict_to_namespace(v)
+               if k not in exclude_keys else v
+               for k, v in d.items()})
     elif isinstance(d, list):
         return [dict_to_namespace(v) for v in d]
     else:

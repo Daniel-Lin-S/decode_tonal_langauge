@@ -11,6 +11,7 @@ from torchmetrics.classification import (
     MulticlassConfusionMatrix
 )
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import Logger, CSVLogger
 import os
 import pandas as pd
 
@@ -110,9 +111,9 @@ class LightningClassifier(pl.LightningModule):
         self.test_f1 = self.f1_metric.compute().item()
         self.confusion_matrix = self.confusion_metric.compute()
 
-        cm_dir = os.path.join(self.logger.log_dir, "confusion_matrix")
-        os.makedirs(cm_dir, exist_ok=True)
-        cm_path = os.path.join(cm_dir, "confusion_matrix.csv")
+        csv_log_dir = self._get_logger_dir(CSVLogger)
+
+        cm_path = os.path.join(csv_log_dir, "confusion_matrix_test.csv")
         cm_array = self.confusion_matrix.cpu().numpy()
         pd.DataFrame(cm_array).to_csv(cm_path, index=False, header=False)
 
@@ -133,3 +134,21 @@ class LightningClassifier(pl.LightningModule):
 
     def get_layer_nparams(self) -> Dict[str, int]:
         return self.model.get_layer_nparams()
+
+    def _get_logger_dir(self, logger_class: Optional[Logger]=None) -> str:
+        """
+        Get the directory where the CSV logger is saving logs.
+        This is useful for saving additional metrics or results.
+        """
+        if self.logger is None:
+            raise ValueError("No logger is set for this model.")
+
+        if isinstance(self.logger, logger_class):
+            return self.logger.log_dir
+        elif isinstance(self.logger, list):
+            for logger in self.logger:
+                if isinstance(logger, logger_class):
+                    return logger.log_dir
+            raise ValueError(f"No logger of type {logger_class} found in the list.")
+
+        return self.logger.log_dir

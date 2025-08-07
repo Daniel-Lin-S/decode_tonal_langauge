@@ -114,3 +114,44 @@ def match_filename(
                 condition = False
 
     return condition
+
+
+def select_non_discriminative_channels(
+        channel_selections: dict,
+        discriminative_keys: List[str]
+    ) -> list:
+    """
+    Select channels that are not discriminative based on the provided
+    channel selections.
+    Channel selections must have the following structure:
+    - 'active_channels': List[int], the indices of active channels.
+    - for each discriminative key (e.g., 'syllable', 'tone'):
+        List[int], the indices of channels that are discriminative for that key.
+
+    Parameters
+    ----------
+    channel_selections : dict
+        Dictionary containing channel selections.
+        Must contain 'active_channels' and keys for discriminative channels.
+    discriminative_keys : List[str]
+        List of keys for discriminative channels to exclude.
+    
+    Returns
+    -------
+    list
+        List of indices of non-discriminative channels.
+    """
+
+    non_discriminative_channels = set(channel_selections['active_channels'])
+    discriminative_channels = set()
+    for label in discriminative_keys:
+        discriminative_channels.update(channel_selections[label])
+
+    non_discriminative_channels = list(
+        non_discriminative_channels - discriminative_channels
+    )
+
+    non_discriminative_channels.sort()
+    
+    return non_discriminative_channels
+

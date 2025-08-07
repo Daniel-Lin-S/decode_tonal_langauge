@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Dict, List, Tuple
+from argparse import Namespace
 
 import os
 import numpy as np
@@ -14,55 +15,52 @@ from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 
 from data_loading.dataloaders import split_dataset
-from data_loading.classifier_utils import prepare_erps_labels
+from data_loading.sample_loading import ClassificationSampleHandler
 from models.classifier_factory import get_classifier_by_name
 from models.classifier_trainer import LightningClassifier
-from utils.utils import set_seeds, prepare_class_labels
+from utils.utils import set_seeds
 from utils.visualise import plot_confusion_matrix
 from utils.metrics import compute_classification_metrics_joint
 
 
 def train_separate_targets(
-    params,
-    seeds: np.ndarray,
-    eval_cfg: Dict,
+    params: Namespace,
+    seeds: np.ndarray
 ) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a separate classifier for each target and combine results."""
-
-    class_labels = prepare_class_labels(
-        params.targets,
-        class_label_dict={
-            "syllable": params.syllable_labels, "tone": params.tone_labels
-        },
-    )
+    verbose = getattr(params, "verbose", 1)
 
     all_datasets: Dict[str, TensorDataset] = {}
     input_shapes: Dict[str, Tuple[int, int]] = {}
     channels = set()
     n_classes_dict: Dict[str, int] = {}
 
+    data_handler = ClassificationSampleHandler(params)
+
     for target in params.targets:
-        erps, labels, chs, cls = prepare_erps_labels(
-            params.sample_path, [target], params.channel_file)
-        n_classes_dict[target] = cls[target]
-        channels.update(chs)
+        data = data_handler.load_data()
+        features = data['features']
+        n_classes_dict.update({target: data['n_classes_dict'][target]})
+        channels.update(data['selected_channels'])
 
-        erps_tensor = torch.tensor(erps, dtype=torch.float32).to(params.device)
-        labels_tensor = torch.tensor(labels, dtype=torch.float32).to(params.device)
-        all_datasets[target] = TensorDataset(erps_tensor, labels_tensor)
-        input_shapes[target] = erps_tensor.shape[1:]
+        all_datasets[target] = data_handler.prepare_torch_dataset(
+            features, data['labels'], params.device)
 
-        if params.verbose > 0:
+        input_shapes[target] = features.shape[1:]
+
+        if verbose > 0:
             print(
-                f"Prepared {erps_tensor.shape[0]} samples with shape {erps_tensor.shape} "
+                f"Prepared {features.shape[0]} samples with shape {features.shape} "
                 f"for target {target}"
             )
+
+    class_labels = data_handler.prepare_class_labels(data['n_classes_dict'])
 
     n_classes = 1
     for cls in n_classes_dict.values():
         n_classes *= cls
 
-    metrics = eval_cfg.get("metrics", ["accuracy"])
+    metrics = getattr(params, "metrics", ["accuracy"])
     metric_values: Dict[str, List[float]] = {m: [] for m in metrics if m != "confusion_matrix"}
     confusion_mat = np.zeros((n_classes, n_classes)) if "confusion_matrix" in metrics else None
     model_size = 0
@@ -73,7 +71,7 @@ def train_separate_targets(
         all_true: Dict[str, np.ndarray] = {}
 
         for target, dataset in all_datasets.items():
-            if params.verbose > 0:
+            if verbose > 1:
                 print(f"Training for target: {target} with seed {seed}...")
 
             loaders = split_dataset(
@@ -86,7 +84,7 @@ def train_separate_targets(
 
             all_true[target] = np.concatenate([b[1].cpu().numpy() for b in loaders[2]])
 
-            trainer_verbose = params.verbose > 1
+            trainer_verbose = verbose > 1
 
             model = get_classifier_by_name(
                 params.model,
@@ -98,11 +96,12 @@ def train_separate_targets(
             )
             model_size += model.get_nparams()
 
-            model_verbose = params.verbose > 0 and i == 0
+            model_verbose = verbose > 0 and i == 0
             if model_verbose:
                 print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
             lightning_model = LightningClassifier(model, learning_rate=params.lr)
+            lightning_model.verbose = model_verbose
 
             accelerator = "gpu" if "cuda" in params.device else "cpu"
             devices = [int(params.device.split(":")[1])] if "cuda" in params.device else 1
@@ -125,6 +124,7 @@ def train_separate_targets(
                 max_epochs=params.epochs,
                 logger=[tb_logger, csv_logger],
                 enable_checkpointing=False,
+                enable_model_summary=model_verbose,
                 callbacks=[early_stop],
                 accelerator=accelerator,
                 devices=devices,
@@ -133,23 +133,23 @@ def train_separate_targets(
             )
 
             trainer.fit(lightning_model, loaders[0], loaders[1])
-
             trainer.test(lightning_model, loaders[2])
-            preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
 
-            if params.model_dir is not None:
+            if params.save_checkpoints:
+                model_dir = os.path.join(params.log_dir, "model_checkpoints")
                 save_path = os.path.join(
-                    params.model_dir, f"{target}_{params.model_name}_seed_{seed}.pt"
+                    model_dir, f"{target}_{params.model_name}_seed_{seed}.pt"
                 )
                 torch.save(model.state_dict(), save_path)
-                if params.verbose > 0:
+                if verbose > 0:
                     print(f"Model saved to {save_path}")
 
             preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
-            all_preds[target] = preds.cpu().numpy()
+            all_preds[target] = preds
 
         joint_metrics = compute_classification_metrics_joint(
-            all_true, all_preds, metrics=metrics
+            all_true, all_preds, metrics=metrics,
+            verbose=verbose > 1
         )
 
         for m in metrics:
@@ -164,44 +164,38 @@ def train_separate_targets(
         **metric_values,
         "model_size": model_size,
         "channels": sorted(channels),
+        "seeds": seeds.tolist(),
         "class_labels": class_labels,
     }
     return result_info, confusion_mat, class_labels
 
 
 def train_joint_targets(
-    params,
-    config: Dict,
-    seeds: np.ndarray,
-    eval_cfg: Dict,
+    params: Namespace,
+    seeds: np.ndarray
 ) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a single model that predicts multiple targets jointly."""
+    verbose = getattr(params, "verbose", 1)
 
-    erps, labels, channels, n_classes_dict = prepare_erps_labels(
-        params.sample_path, params.targets, params.channel_file
+    data_handler = ClassificationSampleHandler(params)
+
+    data = data_handler.load_data()
+    dataset = data_handler.prepare_torch_dataset(
+        data['features'], data['labels'],
+        params.device
     )
+    n_samples, n_channels, seq_length = data['features'].shape
 
-    erps_tensor = torch.tensor(erps, dtype=torch.float32).to(params.device)
-    labels_tensor = torch.tensor(labels, dtype=torch.float32).to(params.device)
-    dataset = TensorDataset(erps_tensor, labels_tensor)
-    n_samples, n_channels, seq_length = erps_tensor.shape
-
-    if params.verbose > 0:
+    if verbose > 0:
         print(
-            f"Prepared {n_samples} samples with shape {erps_tensor.shape} "
-            f"and labels with shape {labels_tensor.shape}"
+            f"Prepared {n_samples} samples with shape {data['features'].shape} "
+            f"and labels with shape {data['labels'].shape}"
         )
 
-    n_classes = len(np.unique(labels))
-    class_labels = prepare_class_labels(
-        params.targets,
-        n_classes_dict=n_classes_dict,
-        class_label_dict={
-            "syllable": params.syllable_labels, "tone": params.tone_labels
-        },
-    )
+    n_classes = len(np.unique(data['labels']))
+    class_labels = class_labels = data_handler.prepare_class_labels(data['n_classes_dict'])
 
-    metrics = eval_cfg.get("metrics", ["accuracy"])
+    metrics = getattr(params, "metrics", ["accuracy"])
     metric_values: Dict[str, List[float]] = {m: [] for m in metrics if m != "confusion_matrix"}
     confusion_mat = np.zeros((n_classes, n_classes)) if "confusion_matrix" in metrics else None
     model_size = 0
@@ -217,7 +211,7 @@ def train_joint_targets(
             seed=int(seed),
         )
 
-        trainer_verbose = params.verbose > 1
+        trainer_verbose = verbose > 1
 
         model = get_classifier_by_name(
             params.model, params.device,
@@ -226,11 +220,12 @@ def train_joint_targets(
         )
         model_size = model.get_nparams()
 
-        model_verbose = params.verbose > 0 and i == 0
+        model_verbose = verbose > 0 and i == 0
         if model_verbose:
             print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
         lightning_model = LightningClassifier(model, learning_rate=params.lr)
+        lightning_model.verbose = model_verbose
 
         accelerator = "gpu" if "cuda" in params.device else "cpu"
         devices = [int(params.device.split(":")[1])] if "cuda" in params.device else 1
@@ -270,16 +265,19 @@ def train_joint_targets(
         true = np.concatenate([b[1].cpu().numpy() for b in loaders[2]])
 
         joint_metrics = compute_classification_metrics_joint(
-            {"label": true}, {"label": preds}, metrics=metrics
+            {"label": true}, {"label": preds}, metrics=metrics,
+            verbose=verbose > 1
         )
 
-        if params.model_dir is not None:
-            target_str = "_".join(params.targets) if len(params.targets) > 1 else params.targets[0]
+        if params.save_checkpoints:
+            model_dir = os.path.join(params.log_dir, "model_checkpoints")
+            target_str = ("_".join(params.targets)
+                          if len(params.targets) > 1 else params.targets[0])
             save_path = os.path.join(
-                params.model_dir, f"{target_str}_{params.model_name}_seed_{seed}.pt"
+                model_dir, f"{target_str}_{params.model_name}_seed_{seed}.pt"
             )
             torch.save(model.state_dict(), save_path)
-            if params.verbose > 0:
+            if verbose > 0:
                 print(f"Model saved to {save_path}")
 
         if confusion_mat is not None and "confusion_matrix" in joint_metrics:
@@ -293,7 +291,7 @@ def train_joint_targets(
     result_info = {
         **metric_values,
         "model_size": model_size,
-        "channels": channels,
+        "channels": data['selected_channels'],
         "class_labels": class_labels,
         "seeds": seeds.tolist(),
     }
@@ -301,16 +299,17 @@ def train_joint_targets(
 
 
 def save_and_plot_results(
-    params,
+    params: Namespace,
     result_info: Dict,
     confusion_matrix: np.ndarray,
     class_labels: List[str],
-    eval_cfg: Dict,
+    experiment_log_dir: str
 ) -> None:
     """Save results to CSV and generate plots."""
 
-    metrics = eval_cfg.get("metrics", [])
-    aggregates = eval_cfg.get("aggregates", ["mean", "std"])
+    metrics = getattr(params, "metrics", ["accuracy"])
+    aggregates = getattr(params, "aggregates", ["mean", "std"])
+
     if isinstance(aggregates, str):
         aggregates = [aggregates]
 
@@ -319,7 +318,7 @@ def save_and_plot_results(
         "model_size": result_info["model_size"],
         "subject": params.subject_id,
         "target": ",".join(params.targets),
-        "electrodes": str(result_info["channels"]),
+        "channels": str(result_info["channels"]),
         "seeds": str(result_info.get("seeds"))
     }
 
@@ -342,12 +341,15 @@ def save_and_plot_results(
         results["confusion_matrix"] = str(confusion_matrix.tolist())
 
     df = pd.DataFrame([results])
-    result_path = os.path.join(params.log_dir, "results.csv")
+    result_path = os.path.join(experiment_log_dir, "results.csv")
     if os.path.exists(result_path):
         df.to_csv(result_path, mode="a", header=False, index=False)
     else:
         df.to_csv(result_path, index=False)
     print(f"Results saved to {result_path}")
+
+    figure_dir = os.path.join(params.log_dir, "figures")
+    os.makedirs(figure_dir, exist_ok=True)
 
     if confusion_matrix is not None and "confusion_matrix" in metrics:
         add_numbers = confusion_matrix.shape[0] <= 10
@@ -355,6 +357,6 @@ def save_and_plot_results(
             confusion_matrix,
             add_numbers,
             label_names=class_labels,
-            figure_path=os.path.join(params.figure_dir, "confusion_matrix.png"),
+            figure_path=os.path.join(figure_dir, "confusion_matrix.png"),
         )
-        print(f"Confusion matrix saved to {params.figure_dir}/confusion_matrix.png")
+        print(f"Confusion matrix saved to {figure_dir}/confusion_matrix.png")

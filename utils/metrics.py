@@ -39,13 +39,14 @@ def compute_classification_metrics_joint(
 
     results = {}
 
-    for target in targets:
-        print('Unique labels in {}: {}'.format(
-            target, set(all_true[target])
-        ))
-        print('Unique predictions in {}: {}'.format(
-            target, set(all_preds[target])
-        ))
+    if verbose:
+        for target in targets:
+            print('Unique labels in {}: {}'.format(
+                target, set(all_true[target])
+            ))
+            print('Unique predictions in {}: {}'.format(
+                target, set(all_preds[target])
+            ))
 
     all_true = {target: all_true[target].astype(int) for target in targets}
     all_preds = {target: all_preds[target].astype(int) for target in targets}
@@ -71,14 +72,6 @@ def compute_classification_metrics_joint(
         ),
         axis=1
     )
-
-    if verbose:
-        print('Unique labels in joint truth: {}'.format(
-            set(joint_true)
-        ), flush=True)
-        print(
-            'Unique labels in joint predictions: {}'.format(set(joint_preds))
-            , flush=True)
 
     metric_funcs = {
         'accuracy': skmetrics.accuracy_score,
