@@ -316,7 +316,6 @@ def save_and_plot_results(
 
     results = {
         "model_name": params.model_name,
-        "model_kwargs": str(params.model_kwargs) if hasattr(params, "model_kwargs") else "{}",
         "model_size": result_info["model_size"],
         "subject": params.subject_id,
         "target": ",".join(params.targets),
@@ -343,11 +342,12 @@ def save_and_plot_results(
         results["confusion_matrix"] = str(confusion_matrix.tolist())
 
     df = pd.DataFrame([results])
-    if os.path.exists(params.result_file):
-        df.to_csv(params.result_file, mode="a", header=False, index=False)
+    result_path = os.path.join(params.log_dir, "results.csv")
+    if os.path.exists(result_path):
+        df.to_csv(result_path, mode="a", header=False, index=False)
     else:
-        df.to_csv(params.result_file, index=False)
-    print(f"Results saved to {params.result_file}")
+        df.to_csv(result_path, index=False)
+    print(f"Results saved to {result_path}")
 
     if confusion_matrix is not None and "confusion_matrix" in metrics:
         add_numbers = confusion_matrix.shape[0] <= 10

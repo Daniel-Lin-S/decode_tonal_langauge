@@ -80,9 +80,8 @@ All results will be saved into a single configuration file.
 - **sample_path**: Path to the `.npz` file containing the samples.
 - **figure_dir**: Directory to store plots.
 - **channel_file**: JSON file containing channel selections for the model. If not specified, all channels will be used.
-- **result_file**: CSV file to log evaluation results.
 - **model_dir**: Directory to save trained model weights.
-- **log_dir**: Directory for TensorBoard logs.
+- **log_dir**: Directory for TensorBoard logs and results (in a csv file)
 ### Experiment Settings
 - **subject_id**: Subject identifier.
 - **targets**: Target labels to predict.

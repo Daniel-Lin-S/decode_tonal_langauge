@@ -3,7 +3,6 @@
 import os
 import sys
 import numpy as np
-import torch
 
 from training.classifier_pipeline import (
     train_joint_targets,
@@ -48,7 +47,7 @@ def run(config: dict, config_path: str | None = None) -> None:
     if config_path is not None and log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         import shutil
-        shutil.copy(config_path, os.path.join(log_dir, "config_used.yaml"))
+        shutil.copy(config_path, os.path.join(log_dir, "config.yaml"))
 
 
 if __name__ == "__main__":
