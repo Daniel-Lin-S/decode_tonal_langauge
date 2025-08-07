@@ -5,9 +5,10 @@ This is an unofficial implementation of the paper Yan Liu et al. ,Decoding and s
 https://www.science.org/doi/full/10.1126/sciadv.adh0478 
 
 Features:
-- Involves modules for pre-processing ECoG signals
-- Involves modules for aligning signals with event onsets to obtain the Event-related Potentials (ERPs)
-- Involves modules for selection of channels based on their activity and discriminative power on a categorical label (e.g. tone in this case)
+- Modular-level implementation for flexible extensions
+- modules for pre-processing ECoG signals
+- modules for aligning signals with event onsets to obtain the Event-related Potentials (ERPs)
+- modules for selection of channels based on their activity and discriminative power on a categorical label (e.g. tone in this case)
 These modules can be applied to other tasks.
 - Extendable classifier, speech synthesizer frameworks with corresponding trainers to define your own model architectures.
 - A small toolbox for visualisation.
@@ -28,88 +29,57 @@ pip list   # check whether properly installed
 ```
 Python 3.11.13 is used when writing this repository.
 
-## Data loading and Preprocessing
-Pipeline of work: 
-1. `preprocess.py`: extracts ECoG and audio from TDT repositories, preprocess the ECoG using Hilbert filter and re-referencing, and save them into `npz` files
-2. `extract_samples.py`: Extracts event onsets and offsets from TextGrid files and build event-related potentials (ECoG) with shape `(n_samples, n_channels, n_timepoints)` and lables of shape `(n_samples,)`. One sample correspond to one event (trial). All these are stored in one `npz` file for convenience.
-    - if rest period is specified, resting ECoG samples will be extracted as well for the channel selection stage.
-3. `find_active_channels.py`: By tuning the p-value threshold and length threshold, selects the appropriate channels that have significantly different response in events compared to rest period. (one-way ANOVA test used)
-4. `find_discriminative_channels.py`: By tuning the p-value threshold and length threshold, selects the appropriate channels that have significantly different response to different syllables and tones. (one-way ANOVA test used)
-
-The actual functions for performing these steps are stored in `data_loading`.
-
-Example Usage:
-```shell
-for SUBJECT_ID in 1 2 3 4 5; do
-    python3 preprocess.py \
-        --subject_id $SUBJECT_ID \
-        --tdt_dir data/${SUBJECT_ID}/raw \
-        --output_dir data/${SUBJECT_ID}/processed \
-        --config_file configs/general_configs.json \
-        --downsample_freq 400 \
-done
-
-for SUBJECT_ID in 1 2 3 4 5; do
-    python3 extract_samples.py \
-        --textgrid_dir data/${SUBJECT_ID}/annotation \
-        --recording_dir data/${SUBJECT_ID}/processed \
-        --config_file configs/general_configs.json \
-        --ecog_kwords "400Hz" "hga" \
-        --output_path data/${SUBJECT_ID}/samples/samples_hga_400Hz.npz \
-        --blocks 1 2 3 4
-done
+## The pipeline
+All steps are modularised, implemented as a module in directories such as `data_loading`, `channel_selection`, `preprocess`. 
+The stages to execute and their parameters are described in a YAML configuration file and executed via the pipeline runner:
+```python
+python run_pipeline.py <config.yaml>
 ```
-Detailed description of each argument can be found in the python files,
-which can be used for writing new preprocessing pipelines.
 
-## Configuration file
-Task-specific parameters can be stored in a JSON file, with its path given to the parameter `config_file`. The parameters required by each file is specified at the top of python scripts.
+Each step in the module could also be runned separately using the corresponding python file, to avoid executing identical preprocessing steps repeatedly. You could also create separate configurations for each module.
 
-Example JSON file:
-```JSON
-{
-    "freq_ranges": [[70, 150]],
-    "freq_band": "hga",
-    "syllable_labels": ["mi", "ma"],
-    "syllable_identifiers": ["i", "a"],
-    "rest_period": [0.0, 10.0],
-    "mel_kwargs": {
-        "n_mels": 80,
-        "n_fft": 2270,
-        "hop_length": 567
-    },
-    "tone_dynamic_mapping": {
-        "0" : [4, 4, 4, 4, 4],
-        "1" : [2, 2.5, 3, 3.5, 4],
-        "2" : [2, 1.5, 1, 1.5, 2],
-        "3" : [5, 4, 3, 2, 1]
-    },
-    "n_tones": 4,
-    "n_syllables": 2
-}
+
+### The configuration file
+Configuration files are written in YAML and serve as the central place for defining datasets, pipeline stages and model parameters. Each top‑level key corresponds to a stage and contains a `module` field with the Python import path of the module to run. Additional parameters are provided under `params` or specialised sub‑keys. See [`CONFIG.md`](CONFIG.md) for a detailed reference of all available parameters.
+
+Example excerpt:
+```yaml
+dataset:
+  syllable_labels: ["mi", "ma"]
+  tone_labels: ["tone1", "tone2", "tone3", "tone4"]
+
+model:
+  model: models.simple_classifiers.LogisticRegressionClassifier
+  model_name: logistic
+  model_kwargs: {}
+
+training:
+  module: train_classifier
+  params:
+    io:
+      sample_path: data/samples/samples.npz
+      figure_dir: figures
+      result_file: results.csv
+    experiment:
+      targets: ["syllable"]
+      seed: 42
+    training:
+      batch_size: 64
+      epochs: 10
+      lr: 0.0005
 ```
+See `example_config.yaml` for a full specification.
+
+### Adding new pipeline modules
+- **Preprocess**: create a Python file in `preprocess/` with a `run(data, params)` function returning the processed array. Reference the module path in the `steps` list of the `preprocess` section in the configuration file.
+- **Sample collection**: write a module with a `run(config)` entry point (see `extract_samples.py`) and set `sample_collection.module` to its import path in the configuration file.
+- **Channel selection**: add a file under `channel_selection/` that exposes `run(data, params)` (and optional `generate_figures`) Reference the module path in the `selections` list of the `channel_selection` section in the configuration file.
+- **Models**: implement new model classes under `models/` and point the `model.model` field in the configuration to the class.
 
 ## Model Training
-The main scripts for model training are provided in `train_classifier.py` and `train_synthesizer.py`.
-By changing the arguments passed to these files, different training settings can be used.
+Training is also driven by the configuration file. The `model` section specifies the class to instantiate, the `training` section defines the module responsible for optimisation along with its parameters, and `evaluation` section defines the metrics used to evaluate the model predictions / outputs. Running `run_pipeline.py` with a configuration containing these sections will automatically import the model, construct the trainer and execute training. Alternatively, you could run `train_classifier.py` directly.
 
-Example Usage:
-```shell
-python3 train_classifier.py \
-    --sample_path data/samples.npz \
-    --subject_id 1 \
-    --figure_dir figures \
-    --model_dir checkpoints \
-    --channel_file channel_selections.json \
-    --config_file configs/general_configs.json \
-    --result_file results/tone_classification.csv \
-    --target tones \
-    --batch_size 32 \
-    --lr 0.001 \
-    --verbose 2 \
-    --epochs 25 \
-```
-Detailed description of each argument can be found in the python files.
+New trainers needs to be written as new Python modules and referenced by import path in the YAML file.
 
 ## Models
 All model architectures and trainers and located in the repository `models`.
@@ -124,6 +94,7 @@ All model architectures and trainers and located in the repository `models`.
     - `SynthesisModelCNN`: The model following the set up in the paper, with CNN layers
     - `SynthesisLite`: A lighter version of the above model achieving similar effect.
 - `synthesisTrainer.py`: Contains the class used to train and evaluate a SynthesisModel
+
 ### Defining new models
 New models can be defined by inheriting base models `classifier.ClassifierModel` and `synthesisModels.SynthesisModel`. 
 
