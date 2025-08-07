@@ -30,6 +30,9 @@ def run(config: dict) -> None:
     output_dir = os.path.join(params.output_dir, output_dir_name)
     os.makedirs(output_dir, exist_ok=True)
 
+    figure_root = os.path.join(output_dir, "figures")
+    os.makedirs(figure_root, exist_ok=True)
+
     update_configuration(
         output_path = os.path.join(output_dir, "config.yaml"),
         previous_config_path = os.path.join(params.sample_dir, "config.yaml"),
@@ -69,11 +72,11 @@ def run(config: dict) -> None:
                 )
 
             module_figure_dir = os.path.join(
-                params.figure_dir, selection_name, f'subject_{subject_id}'
+                figure_root, selection_name, f'subject_{subject_id}'
             )
             os.makedirs(module_figure_dir, exist_ok=True)
 
-            if hasattr(params, 'figure_dir') and hasattr(module, 'generate_figures'):
+            if hasattr(module, 'generate_figures'):
                 module.generate_figures(
                     data, module_results, module_params,
                     figure_dir=module_figure_dir

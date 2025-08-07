@@ -7,9 +7,8 @@ from utils.config import load_config
 
 STAGES = [
     "preprocess",
-    "channel_selection_active",
-    "channel_selection_discriminative",
     "sample_collection",
+    "channel_selection",
     "training",
     "evaluation",
     "visualisation",
