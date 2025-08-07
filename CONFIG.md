@@ -71,40 +71,38 @@ All results will be saved into a single configuration file.
 - **`params`**: Parameters specific to the selection module, see the python scripts of each selection module for details.
 
 ## Model
-- **model**: Python path to the classifier class.
-- **model_name**: Short identifier for the model.
-- **model_kwargs**: Additional keyword arguments for model initialisation.
+- **`model`**: Python path to the classifier class.
+- **`model_name`**: Short identifier for the model.
+- **`model_kwargs`**: Additional keyword arguments for model initialisation.
 
 ## Training (`train_classifier.py`)
 ### I/O
-- **sample_path**: Path to the `.npz` file containing the samples.
-- **figure_dir**: Directory to store plots.
-- **channel_file**: JSON file containing channel selections for the model. If not specified, all channels will be used.
-- **model_dir**: Directory to save trained model weights.
-- **log_dir**: Directory for TensorBoard logs and results (in a csv file)
+- **`sample_dir`**: Path to the training samples, should have files `subject_{id}.npz`.
+- **`channel_file`**: JSON file containing channel selections for the model. If not specified, all channels will be used.
+- **`log_dir`**: Directory for TensorBoard logs and results (in a csv file)
 ### Experiment Settings
-- **subject_id**: Subject identifier.
-- **targets**: Target labels to predict.
-- **separate_models**: Train separate models for each target if `true`.
-- **seed**: The global random seed.
-- **repeat**: Number of repetitions with different seeds.
-- **verbose**: Verbosity level.
-- **device**: Computation device (`cpu` or `cuda:0`).
+- **`targets`**: A list of strings for the target variable(s) to predict in the `npz` files.
+- **`separate_models`**: Train separate models for each target if `true`.
+- **`seed`**: The global random seed.
+- **`repeat`**: Number of repetitions with different seeds.
+- **`verbose`**: Verbosity level. 0 for no message, 1 for basic messages, 2 for detailed messages for each run. Default is 1.
+- **`device`**: Computation device (`cpu` or `cuda:0`). Cuda device id must be provided.
+- **`subject_ids`**: Filter for subject ids. If not given, all subjects used.
 ### Training Settings
-- **train_ratio**: Proportion of data used for training.
-- **vali_ratio**: Proportion of data used for validation.
-- **test_ratio**: Proportion of data used for testing.
-- **batch_size**: Batch size for training.
-- **epochs**: Maximum number of training epochs.
-- **lr**: Learning rate.
-- **patience**: Patience for early stopping.
-- **log_every_n_steps**: Logging frequency in training steps.
+- **`train_ratio`**: Proportion of data used for training.
+- **`vali_ratio`**: Proportion of data used for validation.
+- **`test_ratio`**: Proportion of data used for testing.
+- **`batch_size`**: Batch size for training.
+- **`epochs`**: Maximum number of training epochs.
+- **`lr`**: Base learning rate.
+- **`patience`**: Patience for early stopping.
+- **`log_every_n_steps`**: Logging frequency in training steps.
 
 ## Evaluation
-- **metrics**: List of metrics to compute 
+- **`metrics`**: List of metrics to compute 
     - For classification: choose from `accuracy`, `f1`, `precision`, `recall`, `confusion_matrix`, `cohen_kappa` or use any function name of sklearn.metrics.
         - `f1`, `precision`, `recall` of multi-class labels are the weighted sum of each class.
-- **aggregates**: List of aggregation methods across repeated runs with different seeds.
+- **`metric_aggregates`**: List of aggregation methods across repeated runs with different seeds.
     - For example, with `metrics = [accuracy], aggregates=[mean, std]`, the mean and standard deviation of accuracies will be recorded as `accuracy_mean` and `accuracy_std` in the output csv file, together with accuracies of each run in `accuracy_all`.
     - By default, `aggregates=[mean, std]`. 
     - Each value must be a function in numpy.

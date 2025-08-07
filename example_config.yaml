@@ -53,9 +53,7 @@ channel_selection:
   io:
     sample_dir: data/samples
     figure_dir: figures
-    output_dir: configs/channel_selection
-    channel_locations_file: data/channel_locs.mat               # Electrode location file
-    channel_locations_key: locs                                 # Key for locations in mat file
+    output_dir: data/channel_selection
   selections:
     - module: channel_selection.active
       selection_name: active_channels
@@ -90,16 +88,13 @@ training:
   module: train_classifier
   params:
     io:
-      sample_path: data/samples/samples.npz   # Path to training samples
-      figure_dir: figures                     # Directory for output figures
-      channel_file: null                      # Optional path to selected channels
-      result_file: results.csv                # CSV to log results
-      model_dir: null                         # Directory to save trained models
+      sample_dir: data/samples
+      channel_selection_dir: data/channel_selection
       log_dir: logs                           # Directory for tensorboard logs
     experiment:
-      subject_id: 1
-      targets: ["syllable"]
-      separate_models: false
+      targets: ["syllable", "tone"]
+      features: ecog
+      separate_models: true
       seed: 42
       repeat: 1
       verbose: 1
@@ -116,7 +111,4 @@ training:
 
 evaluation:
   metrics: [accuracy, f1_score, confusion_matrix]  # Metrics to compute
-  aggregates: [mean, std]                          # Aggregation methods across seeds
-
-visualisation:
-  module: null
+  metric_aggregates: [mean, std]                          # Aggregation methods across seeds

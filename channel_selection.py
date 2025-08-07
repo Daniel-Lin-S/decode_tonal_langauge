@@ -8,6 +8,7 @@ import numpy as np
 import json
 
 from importlib import import_module
+import warnings
 
 from utils.config import (
     dict_to_namespace, load_config,
@@ -60,6 +61,12 @@ def run(config: dict) -> None:
             module_results = module.run(data, module_params)
 
             subject_results[selection_name] = module_results["selected_channels"]
+
+            if len(subject_results[selection_name]) == 0:
+                warnings.warn(
+                    'No active channels found for selection '
+                    f'{selection_name} in subject {subject_id}.'
+                )
 
             module_figure_dir = os.path.join(
                 params.figure_dir, selection_name, f'subject_{subject_id}'

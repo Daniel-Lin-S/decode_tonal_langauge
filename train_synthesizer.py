@@ -16,7 +16,7 @@ from torch.utils.data import TensorDataset
 import json
 
 from data_loading.dataloaders import split_dataset
-from data_loading.channel_selection import select_non_discriminative_channels
+from data_loading.utils import select_non_discriminative_channels
 from utils.utils import set_seeds
 from utils.visualise import plot_training_losses
 from utils.audio import mel_to_audio, compare_mels, audio_to_mel
