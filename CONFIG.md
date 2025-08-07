@@ -8,10 +8,10 @@ This document describes the available parameters for each pipeline module.
 
 ## Preprocess (`preprocess.py`)
 ### I/O
-- **root_dir**: Root directory containing the raw data for all subjects.  
-- **subject_dirs**: List of directories for each subject containing their raw data.
-- **output_dir**: Root directory to save processed data. 
-- **subject_ids**: List of subject IDs used for naming output files. 
+- **`root_dir`**: Root directory containing the raw data for all subjects.  
+- **`subject_dirs`**: List of directories for each subject containing their raw data.
+- **`output_dir`**: Root directory to save processed data. 
+- **`subject_ids`**: List of subject IDs used for naming output files. 
 ### steps
 The preprocessing steps are performed **in order** as specified in the configuration file. Each step is defined by a module and its associated parameters. Some common preprocessing tools can be found in `preprocess`. 
 - **preprocess.downsample**: downsample the signal to a specified frequency.
@@ -35,9 +35,9 @@ Note that the signal frequency is available in `params.signal_freq` as a global 
 
 ## Sample Collection (`extract_samples.py`)
 ### **io**
-- **textgrid_root**: Root directory containing TextGrid files.
-- **recording_dir**: Directory containing ECoG and audio `.npz` files. (should be an output of `preprocess.py`)
-- **output_dir**: Directory to save extracted samples.
+- **`textgrid_root`**: Root directory containing TextGrid files.
+- **`recording_dir`**: Directory containing ECoG and audio `.npz` files. (should be an output of `preprocess.py`)
+- **`output_dir`**: Directory to save extracted samples.
     - Each `.npz` file will be named `subject_{id}.npz`.
     - A configuration file `config.yaml` will also be saved in this directory with all settings used for pre-processing and sample collection.
 ### **`settings`**
@@ -54,32 +54,21 @@ Example: `[0.5, 1.0]`
 - **`tier_list`**: List of tiers (`str`) in the textgrid files to consider for sample extraction. If not given, all tiers will be used.
 - **`blocks`**: List of blocks (`int`) to process. If not given, all blocks will be extracted.
 
-
-## Active Channel Selection (`find_active_channels.py`)
-### I/O
-- **sample_dir**: Directory where the `.npz` files with subject recording samples are stored.
-- **figure_dir**: Directory to save diagnostic figures.
-- **output_dir**: Directory to save the identified active channels (in `json` files)
-### Settings
-- **p_threshold**: P-value threshold for significance.
-- **consecutive_length_threshold**: Minimum consecutive significant length for a channel to be categorised as active.
-
-## Discriminative Channel Selection (`find_discriminative_channels.py`)
-### I/O
-- **recording_file_path**: Path to the `.npz` file with the recording.
-- **channel_locations_file**: File containing electrode locations.
-- **channel_locations_key**: Key in the location file for electrode positions.
-- **figure_dir**: Directory to save figures.
-- **output_file**: JSON file to save discriminative channels.
-- **channel_output_file**: CSV file with discriminative scores for all channels.
-### Settings
-- **label_names**: Labels used to evaluate discriminative power.
-- **recording_name**: Key for recording data in the `.npz` file.
-- **p_thresholds**: P-value thresholds for each label.
-- **consecutive_length_thresholds**: Minimum lengths of consecutive significant time points.
-- **sampling_rate**: Sampling rate of the recording.
-- **onset_time**: Onset time for aligning visualisations.
-- **individual_figures**: Whether to save figures for each channel individually.
+## Channel selection {`channel_selection.py`}
+### **`io`**
+- **`sample_dir`**: Directory containing `.npz` files for each subject.  
+    Example: `samples/`
+- **`output_dir`**: Directory to save the results of channel selection.  
+Example: `channel_selection_results/`
+- **`figure_dir`**: Directory to save generated figures (optional).  
+Example: `figures/`
+### **`selection`**: The modules for selecting channels
+All results will be saved into a single configuration file. 
+- **`module`**: The Python module to be used for the selection. (under `channel_selection` module)
+    Example: `channel_selection.active`
+- **`selection_name`**: The name of the selection, used to identify the results.  
+    Example: `active_channels`
+- **`params`**: Parameters specific to the selection module, see the python scripts of each selection module for details.
 
 ## Model
 - **model**: Python path to the classifier class.

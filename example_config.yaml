@@ -48,35 +48,38 @@ sample_collection:
     settings:
       syllable_identifiers: [i, a]       # Identifiers for syllables in textgrid files.
 
-channel_selection_active:
-  module: find_active_channels
-  params:
-    io:
-      sample_dir: data/samples/setup_1               # Path to ECoG data
-      figure_dir: figures/active                        # Directory for saving figures
-      output_dir: configs/channel_selection             # Directory for saving active channels (json files)
-    settings:
-      p_threshold: 0.01                   # P-value threshold for significance
-      consecutive_length_threshold: 40     # Minimum consecutive significant length
-
-channel_selection_discriminative:
-  module: find_discriminative_channels
-  params:
-    io:
-      recording_file_path: processed/npz/HS1_combined.npz          # Path to combined ECoG data
-      channel_locations_file: data/channel_locs.mat               # Electrode location file
-      channel_locations_key: locs                                 # Key for locations in mat file
-      figure_dir: figures/discriminative                          # Directory for figures
-      output_file: configs/discriminative_channels.json           # JSON to save discriminative channels
-      channel_output_file: configs/channel_scores.csv             # CSV with scores for all channels
-    settings:
-      label_names: [syllable, tone]               # Labels used for testing
-      recording_name: ecog                        # Recording name in npz file
-      p_thresholds: [0.01, 0.001]                 # P-value thresholds per label
-      consecutive_length_thresholds: [50, 50]     # Min significant lengths
-      sampling_rate: 400                          # Sampling rate of recording
-      onset_time: null                            # Onset time for plotting
-      individual_figures: false                   # Save figures per channel
+channel_selection:
+  module: channel_selection
+  io:
+    sample_dir: data/samples
+    figure_dir: figures
+    output_dir: configs/channel_selection
+    channel_locations_file: data/channel_locs.mat               # Electrode location file
+    channel_locations_key: locs                                 # Key for locations in mat file
+  selections:
+    - module: channel_selection.active
+      selection_name: active_channels
+      params:
+        p_threshold: 0.01                    # P-value threshold for significance
+        active_time_threshold: 0.1           # Minimum consecutive significant length
+        rest_name: ecog_rest
+        erp_name: ecog
+    - module: channel_selection.discriminative
+      selection_name: syllable_discriminative
+      params:
+        p_threshold: 0.01
+        active_time_threshold: 0.1            # Min significant lengths
+        onset_time: 0.2                       # Onset time for plotting
+        label: syllable
+        recording_name: ecog                  # Recording name in npz file
+    - module: channel_selection.discriminative
+      selection_name: tone_discriminative
+      params:
+        p_threshold: 0.01
+        active_time_threshold: 0.1            # Min significant lengths
+        onset_time: 0.2                       # Onset time for plotting
+        label: tone
+        recording_name: ecog                  # Recording name in npz file
 
 model:
   model: models.simple_classifiers.LogisticRegressionClassifier  # Python path to model class

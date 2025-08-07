@@ -2,6 +2,7 @@ import yaml
 from argparse import Namespace
 import os
 import json
+import hashlib
 
 
 def load_config(path: str) -> dict:
@@ -62,3 +63,16 @@ def update_configuration(
 
     with open(output_path, "w") as f:
         yaml.dump(previous_cfg, f)
+
+
+def generate_hash_name_from_config(
+        base_name: str, config: dict
+    ) -> str:
+    """
+    Generate a unique output directory name based
+    on the base name and configuration.
+    """
+    hash_input = json.dumps(config, sort_keys=True)
+    hash_part = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+
+    return f"{base_name}__{hash_part}"
