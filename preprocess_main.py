@@ -36,6 +36,7 @@ import numpy as np
 import yaml
 import importlib
 from utils.config import dict_to_namespace
+from typing import List
 
 import hashlib
 import matplotlib.pyplot as plt
@@ -171,7 +172,7 @@ def run(config: dict) -> str:
 
 def generate_setup_name(pre_cfg: dict) -> str:
     """Generate a unique name for the preprocessing setup based on the configuration."""
-    steps = pre_cfg.get("steps", [])
+    steps = pre_cfg.get("params", {}).get("steps", [])
 
     readable_parts = [
         step["module"].split(".")[-1] for step in steps

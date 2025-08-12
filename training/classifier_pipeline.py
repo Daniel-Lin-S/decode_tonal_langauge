@@ -318,7 +318,7 @@ def save_and_plot_results(
         "model_size": result_info["model_size"],
         "subject": params.subject_id,
         "target": ",".join(params.targets),
-        "channels": str(result_info["channels"]),
+        "channels": ",".join(map(str, result_info.get("channels", []))),
         "seeds": str(result_info.get("seeds"))
     }
 

@@ -71,8 +71,15 @@ def run(config: dict) -> str:
     else:
         base_cfg = {}
 
+    channel_selection_path = os.path.join(params.channel_selection_dir, 'config.yaml')
+    if os.path.exists(channel_selection_path):
+        channel_cfg = load_config(channel_selection_path)
+    else:
+        channel_cfg = {}
+
     merged_cfg = {
         **base_cfg,
+        **channel_cfg,
         'model': model_cfg,
         'training': training_section,
         'dataset': dataset_cfg,
