@@ -41,11 +41,12 @@ import hashlib
 import matplotlib.pyplot as plt
 
 
-def run(config: dict) -> None:
+def run(config: dict) -> str:
     """Extract and preprocess ECoG signals based on configuration."""
 
     pre_cfg = config.get("preprocess", {})
-    io_cfg = pre_cfg.get("io", {})
+    pre_params = pre_cfg.get("params", {})
+    io_cfg = pre_params.get("io", {})
 
     params = dict_to_namespace(io_cfg)
 
@@ -124,7 +125,7 @@ def run(config: dict) -> None:
             print('ECoG data shape: ', data.shape)
             print('ECoG sampling frequency:', ecog_freq)
 
-            for i, step in enumerate(pre_cfg.get('steps', [])):
+            for i, step in enumerate(pre_params.get('steps', [])):
                 module_name = step['module']
                 step_params = step.get('params', {})
 
@@ -164,6 +165,8 @@ def run(config: dict) -> None:
                 print('Saved audio data to:', audio_file)
             else:
                 print('Audio data already exists:', audio_file)
+
+    return setup_dir
 
 
 def generate_setup_name(pre_cfg: dict) -> str:

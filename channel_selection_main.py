@@ -16,11 +16,12 @@ from utils.config import (
 )
 
 
-def run(config: dict) -> None:
+def run(config: dict) -> str:
     """Identify active channels using configuration settings."""
 
     ch_cfg = config.get("channel_selection", {})
-    io_dict = ch_cfg.get("io", {})
+    ch_params = ch_cfg.get("params", {})
+    io_dict = ch_params.get("io", {})
 
     params = dict_to_namespace(io_dict)
 
@@ -50,7 +51,7 @@ def run(config: dict) -> None:
 
         subject_results = {}
 
-        for module_cfg in ch_cfg.get("selections", []):
+        for module_cfg in ch_params.get("selections", []):
             module_name = module_cfg["module"]
             selection_name = module_cfg["selection_name"]
             module_params = module_cfg.get("params", {})
@@ -88,6 +89,7 @@ def run(config: dict) -> None:
 
         print(f'Saved results for subject {subject_id} to {output_file}.')
 
+    return output_dir
 
 if __name__ == "__main__":
     import sys
