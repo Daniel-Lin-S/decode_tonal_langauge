@@ -116,7 +116,8 @@ def run(config: dict) -> None:
                     'block_id': block_id,
                     'subject_id': subject_id,
                     'signal_freq': ecog_freq
-                }
+                },
+                exclude_keys=['bands']
             )
 
             print('Audio shape: ', audio.shape)
@@ -181,6 +182,7 @@ def generate_setup_name(pre_cfg: dict) -> str:
     return f"{readable_name}_{hash_part}"
 
 
+# TODO - this function does not visualise steps where number of channels change.
 def visualise_preprocessing(
     before_data: np.ndarray,
     before_freq: float,

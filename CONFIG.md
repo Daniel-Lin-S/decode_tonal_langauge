@@ -17,7 +17,7 @@ The preprocessing steps are performed **in order** as specified in the configura
 - **preprocess.downsample**: downsample the signal to a specified frequency.
 - **preprocess.frequency_filter**: extract a particular frequency band, using Butterworth filter or Hilbert envelope (if `envelope=True`). 
 - **preprocess.channel_zscore**: Apply z-score normalisation to each channel.
-- **preprocess.rereference**: Rereference each channel of the input data using a specified reference interval.
+- **preprocess.zscore_rereference**: Rereference each channel of the input data using a specified reference interval.
 
 See detailed descriptions of parameters for each module in the corresponding python file.
 

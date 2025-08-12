@@ -1,8 +1,8 @@
 import math
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import numpy as np
 from scipy.fft import fft, ifft
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt, sosfilt, firwin, lfilter
 from argparse import Namespace
 
 
@@ -17,33 +17,58 @@ def run(data: np.ndarray, params: Namespace) -> np.ndarray:
         Input data array of shape (n_channels, n_timepoints).
     params : Namespace
         Parameters object containing filtering settings.
-        - `freq_ranges`: List[Tuple[float, float]], frequency ranges to filter.
+        - `bands`: list of dictionaries specifying:
+            - `method` : str, filtering method to use, one of
+              ['hilbert', 'butter', 'fir'].
+            - 'params' : dict (optional), additional parameters for the filter method.
+          all the extracted bands will be concatenated as channels.
         - `signal_freq`: int, sampling frequency of the input data.
-        - `envelope`: bool (optional), if True, apply Hilbert transform to get envelope signals.
-          Default is True.
+
+    Returns
+    -------
+    np.ndarray
+        Filtered data of shape (n_filtered_channels, n_timepoints).
+        Where n_filtered_channels depends on the number of bands
+        and the filtering method used.
     """
 
-    if "freq_ranges" not in params or params.freq_ranges is None:
-        raise ValueError("freq_ranges must be specified in params.")
-
-    envelope = getattr(params, "envelope", True)
+    if "bands" not in params or params.bands is None:
+        raise ValueError("bands must be specified in params.")
 
     all_channels = []
-    for freq_range in params.freq_ranges:
-        if len(freq_range) != 2:
-            raise ValueError(
-                "Each frequency range must have exactly two elements."
-            )
-        if envelope:
+    for freq_config in params.bands:
+        method = freq_config.get("method", "hilbert")
+        method_params = freq_config.get("params", {})
+
+        if method == 'hilbert':
+            if 'freq_ranges' not in method_params:
+                raise ValueError(
+                    "Hilbert filter requires 'freq_ranges' in params."
+                )
             signals = hilbert_filter(
-                data, params.signal_freq, freq_ranges=[freq_range]
+                data, params.signal_freq,
+                **method_params
             )
-        else:
-            signals = bandpass_filter(
+        elif method == 'butter':
+            if "freqs" not in method_params:
+                raise ValueError(
+                    "Butterworth filter requires 'freq_range' in params."
+                )
+            signals = butter_filter(
                 data,
-                lowcut=freq_range[0],
-                highcut=freq_range[1],
                 fs=params.signal_freq,
+                **method_params
+            )
+        elif method == 'fir':
+            if "order" not in method_params or "center_frequencies" not in method_params:
+                raise ValueError(
+                    "FIR filter requires 'order' and 'center_frequencies' in params."
+                )
+            signals = fir_bandpass_filter(
+                data,
+                fs=params.signal_freq,
+                order=method_params["order"],
+                center_frequencies=method_params["center_frequencies"]
             )
         all_channels.append(signals)
 
@@ -55,7 +80,7 @@ def run(data: np.ndarray, params: Namespace) -> np.ndarray:
 def hilbert_filter(
     data: np.ndarray,
     sampling_rate: int,
-    freq_ranges: List[Tuple[float, float]],
+    freq_ranges: Union[List[Tuple[float, float]], Tuple[float, float]],
     f0: float = 0.018,
     octspace: float = 1/7,
     filterbank_bias: float = math.log10(0.39),
@@ -71,7 +96,7 @@ def hilbert_filter(
         Input shape (n_channels, n_timepoints)
     sampling_rate : int
         Data sampling rate (Hz)
-    freq_ranges : List[Tuple[float, float]]
+    freq_ranges : List[Tuple[float, float]] | Tuple[float, float]
         List of frequency ranges to filter. \n
         Each range is a tuple (min_freq, max_freq).
         Can also give a single tuple for one band.
@@ -95,6 +120,8 @@ def hilbert_filter(
     """
     if isinstance(freq_ranges, tuple):
         freq_ranges = [freq_ranges]
+    if isinstance(freq_ranges[0], float):
+        freq_ranges = [tuple(freq_ranges)]
 
     C, T = data.shape
 
@@ -102,6 +129,10 @@ def hilbert_filter(
     sigma_fs = []
 
     for freq_range in freq_ranges:
+        if len(freq_range) != 2:
+            raise ValueError(
+                "Each frequency range must be a tuple of (min_freq, max_freq)."
+            )
         min_freq = freq_range[0] if freq_range else 0
         max_freq = freq_range[1] if freq_range else sampling_rate // 2
         max_oct = math.log2(max_freq / f0)
@@ -153,11 +184,13 @@ def hilbert_filter(
     return filtered_signal.mean(axis=2)
 
 
-def bandpass_filter(
+def butter_filter(
         data: np.ndarray,
-        lowcut: float, highcut: float,
+        freqs: Union[Tuple[float, float], float],
         fs: float,
-        order: int=4
+        order: int=4,
+        causal: bool=False,
+        filter_type: str='bandpass'
     ) -> np.ndarray:
     """
     Apply a bandpass filter to the data.
@@ -166,11 +199,10 @@ def bandpass_filter(
     ----------
     data : np.ndarray
         The input data to be filtered.
-        Of shape (n_channels, n_samples) or (n_samples,).
-    lowcut : float
-        The low cutoff frequency of the filter in Hz.
-    highcut : float
-        The high cutoff frequency of the filter in Hz.
+        Of shape (n_channels, n_timepoints) or (n_timepoints,).
+    freqs: Tuple[float, float]
+        The frequency range (low, high) in Hz for bandpass/bandstop
+        or the cutoff frequency in Hz for lowpass/highpass.
     fs : float
         The sampling frequency of the data in Hz.
     order : int, optional
@@ -184,9 +216,61 @@ def bandpass_filter(
         If `data` is 1D, the output will be 1D.
     """
     nyquist = 0.5 * fs
-    low = lowcut / nyquist
-    high = highcut / nyquist
-    b, a = butter(order, [low, high], btype='band')
-    filtered = filtfilt(b, a, data, axis=-1)
+    freqs = np.asarray(freqs, dtype=float)
+    normalised_freqs = freqs / nyquist
+
+    if causal:
+        sos = butter(order, normalised_freqs, btype=filter_type, output='sos')
+        filtered = sosfilt(sos, data, axis=-1)
+    else:
+        b, a = butter(order, normalised_freqs, btype=filter_type)
+        filtered = filtfilt(b, a, data, axis=-1)
 
     return filtered
+
+
+def fir_bandpass_filter(
+        data: np.ndarray,
+        fs: float,
+        order: int,
+        center_frequencies: List[float]
+    ) -> np.ndarray:
+    """
+    Apply a FIR bandpass filter to the input data
+    at given frequencies.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The input signal (1D or 2D array).
+    fs : float
+        The sampling frequency of the data in Hz.
+    order : int
+        The order of the FIR filter (e.g., 390).
+    center_frequencies : list of float
+        The center frequencies of the bandpass filter in Hz.
+
+    Returns
+    -------
+    np.ndarray
+        The filtered signal of the same shape as `data`.
+    """
+    nyquist = 0.5 * fs
+    filtered = np.zeros_like(data)
+
+    for center_freq in center_frequencies:
+        lowcut = center_freq * 0.9
+        highcut = center_freq * 1.1
+
+        low = lowcut / nyquist
+        high = highcut / nyquist
+
+        fir_coeff = firwin(order + 1, [low, high], pass_zero=False, fs=fs)
+
+        filtered += lfilter(fir_coeff, 1.0, data, axis=-1)
+
+    filtered /= len(center_frequencies)
+
+    return filtered
+
+

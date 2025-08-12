@@ -1,6 +1,7 @@
 import numpy as np
 from argparse import Namespace
 
+
 def run(data: np.ndarray, params: Namespace) -> np.ndarray:
     """
     z-score normalisation on each channel of the input data.
@@ -11,7 +12,8 @@ def run(data: np.ndarray, params: Namespace) -> np.ndarray:
         Input data array of shape (n_channels, n_timepoints).
     params : object
         Parameters object containing normalisation settings.
-        - `preserve_nans`: bool (optional), if True, NaN values in the input data will be preserved in the output.
+        - `preserve_nans`: bool (optional), if True,
+          NaN values in the input data will be preserved in the output.
           Default is True.
     """
 

@@ -18,10 +18,17 @@ preprocess:
     
     - module: preproccess.frequency_filter
       params:
-        freq_ranges: [[70, 150]]            # Frequency ranges to filter
-        envelope: true                      # Apply Hilbert envelope filtering
+        bands:
+        - method: hilbert
+          params:
+            freq_ranges: [70, 150]
+            envelope: true
+        - method: butter
+          params:
+            freqs: [0.3, 100]
+            filter_type: bandpass
 
-    - module: preproccess.rereference
+    - module: preproccess.zscore_rereference
       params:
         rereference_interval: [0., 25.]   # Interval in seconds for rereferencing
 
