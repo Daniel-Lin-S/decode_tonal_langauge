@@ -33,7 +33,7 @@ Python 3.11.13 is used when writing this repository.
 All steps are modularised, implemented as a module in directories such as `data_loading`, `channel_selection`, `preprocess`. 
 The stages to execute and their parameters are described in a YAML configuration file and executed via the pipeline runner:
 ```python
-python run_pipeline.py <config.yaml>
+python main.py <config.yaml>
 ```
 
 Each step in the module could also be runned separately using the corresponding python file, to avoid executing identical preprocessing steps repeatedly. You could also create separate configurations for each module.
@@ -77,7 +77,7 @@ See `example_config.yaml` for a full specification.
 - **Models**: implement new model classes under `models/` and point the `model.model` field in the configuration to the class.
 
 ## Model Training
-Training is also driven by the configuration file. The `model` section specifies the class to instantiate, the `training` section defines the module responsible for optimisation along with its parameters, and `evaluation` section defines the metrics used to evaluate the model predictions / outputs. Running `run_pipeline.py` with a configuration containing these sections will automatically import the model, construct the trainer and execute training. Alternatively, you could run `train_classifier.py` directly.
+Training is also driven by the configuration file. The `model` section specifies the class to instantiate, the `training` section defines the module responsible for optimisation along with its parameters, and `evaluation` section defines the metrics used to evaluate the model predictions / outputs. Running `main.py` with a configuration containing these sections will automatically import the model, construct the trainer and execute training. Alternatively, you could run `train_classifier.py` directly.
 
 New trainers needs to be written as new Python modules and referenced by import path in the YAML file.
 
