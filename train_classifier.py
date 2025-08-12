@@ -16,7 +16,7 @@ from utils.config import (
 )
 
 
-def run(config: dict) -> None:
+def run(config: dict) -> str:
     """Run classifier training from a configuration dictionary."""
     print('Running train_classifier ...')
 
@@ -106,6 +106,8 @@ def run(config: dict) -> None:
             subject_params, results, conf_mat, labels,
             experiment_log_dir=params.log_dir
         )
+
+    return params.log_dir
 
 def _prepare_subject_params(base_params: Namespace, subject_id: str) -> Namespace:
     """Prepare parameters for a specific subject."""

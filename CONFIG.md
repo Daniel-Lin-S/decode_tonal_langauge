@@ -7,12 +7,12 @@ This document describes the available parameters for each pipeline module.
 - **tone_labels**: Ordered list of tone classes.
 
 ## Preprocess (`preprocess.py`)
-### I/O
+### **`params.io`**
 - **`root_dir`**: Root directory containing the raw data for all subjects.  
 - **`subject_dirs`**: List of directories for each subject containing their raw data.
 - **`output_dir`**: Root directory to save processed data. 
 - **`subject_ids`**: List of subject IDs used for naming output files. 
-### steps
+### **`params.steps`**
 The preprocessing steps are performed **in order** as specified in the configuration file. Each step is defined by a module and its associated parameters. Some common preprocessing tools can be found in `preprocess`. 
 - **preprocess.downsample**: downsample the signal to a specified frequency.
 - **preprocess.frequency_filter**: extract a particular frequency band, using Butterworth filter or Hilbert envelope (if `envelope=True`). 
@@ -34,13 +34,13 @@ def run(data: np.ndarray, params: Namespace) -> np.ndarray:
 Note that the signal frequency is available in `params.signal_freq` as a global parameter. If the sampling rate of the signal is changed by this pre-processing step, please modify `params.signal_freq` accordingly.
 
 ## Sample Collection (`extract_samples.py`)
-### **io**
+### **`params.io`**
 - **`textgrid_root`**: Root directory containing TextGrid files.
-- **`recording_dir`**: Directory containing ECoG and audio `.npz` files. (should be an output of `preprocess.py`)
 - **`output_dir`**: Directory to save extracted samples.
     - Each `.npz` file will be named `subject_{id}.npz`.
     - A configuration file `config.yaml` will also be saved in this directory with all settings used for pre-processing and sample collection.
-### **`settings`**
+- **`recording_dir`**: (optional) Only required when running this file separately. Directory containing ECoG and audio `.npz` files.
+### **`params.settings`**
 - **`syllable_identifiers`**: List of syllable identifies in the textgrid files.
     Example: `["i", "a"]`
 - **`overwrite`**: Whether to overwrite existing files. Default: `false`
@@ -55,14 +55,13 @@ Example: `[0.5, 1.0]`
 - **`blocks`**: List of blocks (`int`) to process. If not given, all blocks will be extracted.
 
 ## Channel selection {`channel_selection.py`}
-### **`io`**
-- **`sample_dir`**: Directory containing `.npz` files for each subject.  
-    Example: `samples/`
+### **`params.io`**
 - **`output_dir`**: Directory to save the results of channel selection.  
 Example: `channel_selection_results/`
 - **`figure_dir`**: Directory to save generated figures (optional).  
 Example: `figures/`
-### **`selection`**: The modules for selecting channels
+- **`sample_dir`**: (optional) Only required when running this file separately. Directory containing `.npz` files for each subject.
+### **`params.selections`**: The modules for selecting channels
 All results will be saved into a single configuration file. 
 - **`module`**: The Python module to be used for the selection. (under `channel_selection` module)
     Example: `channel_selection.active`
@@ -76,10 +75,10 @@ All results will be saved into a single configuration file.
 - **`model_kwargs`**: Additional keyword arguments for model initialisation.
 
 ## Training (`train_classifier.py`)
-### I/O
-- **`sample_dir`**: Path to the training samples, should have files `subject_{id}.npz`.
-- **`channel_file`**: JSON file containing channel selections for the model. If not specified, all channels will be used.
+### **`params.io`**
 - **`log_dir`**: Directory for TensorBoard logs and results (in a csv file)
+- **`sample_dir`**: (optional) Only required when running this file separately. Path to the training samples, should have files `subject_{id}.npz`. 
+- **`channel_selection_dir`**: (optional) Only required when running this file separately. JSON file containing channel selections for the model. If not specified, all channels will be used.
 ### Experiment Settings
 - **`targets`**: A list of strings for the target variable(s) to predict in the `npz` files.
 - **`separate_models`**: Train separate models for each target if `true`.
@@ -88,7 +87,7 @@ All results will be saved into a single configuration file.
 - **`verbose`**: Verbosity level. 0 for no message, 1 for basic messages, 2 for detailed messages for each run. Default is 1.
 - **`device`**: Computation device (`cpu` or `cuda:0`). Cuda device id must be provided.
 - **`subject_ids`**: Filter for subject ids. If not given, all subjects used.
-### Training Settings
+### **`params.training`**
 - **`train_ratio`**: Proportion of data used for training.
 - **`vali_ratio`**: Proportion of data used for validation.
 - **`test_ratio`**: Proportion of data used for testing.

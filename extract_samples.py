@@ -13,7 +13,7 @@ from data_loading.text_align import handle_textgrids, extract_ecog_audio
 from utils.config import dict_to_namespace, update_configuration
 
 
-def run(config: dict) -> None:
+def run(config: dict) -> str:
     """Extract samples from multiple subjects based on configuration."""
 
     collection_cfg = config.get("sample_collection", {})
@@ -120,6 +120,7 @@ def run(config: dict) -> None:
             rest_period=tuple(subject_params["rest_period"]),
         )
 
+    return output_dir
 
 def _sample_consecutive_events(events, num_events):
     events = sorted(events, key=lambda x: x['start'])
