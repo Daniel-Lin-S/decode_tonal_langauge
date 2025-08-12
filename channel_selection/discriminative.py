@@ -8,6 +8,7 @@ from scipy.stats import f_oneway
 import os
 from typing import Optional
 import matplotlib.pyplot as plt
+import random
 
 from .utils import find_significant_channels
 
@@ -69,7 +70,9 @@ def generate_figures(
 
     sf_name = f"{params.get('recording_name', 'ecog')}_sf"
 
-    for ch in results['selected_channels'][:10]:
+    n_channels_to_plot = min(10, len(results['selected_channels']))
+    channels_to_plot = random.sample(results['selected_channels'], n_channels_to_plot)
+    for ch in channels_to_plot:
         fig_name = f'{label_name}_channel_{ch}.png'
         fig_path = os.path.join(figure_dir, fig_name)
 

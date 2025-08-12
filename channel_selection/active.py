@@ -7,6 +7,7 @@ import os
 from scipy.stats import f_oneway
 from typing import Optional
 import matplotlib.pyplot as plt
+import random
 
 from .utils import get_max_length
 
@@ -107,7 +108,9 @@ def generate_figures(
 
     # Save ERP vs Rest plots for top channels
     n_channels_plot = min(10, len(channels))
-    for i, ch in enumerate(channels[:n_channels_plot]):
+    selected_channels = random.sample(channels, n_channels_plot)
+
+    for i, ch in enumerate(selected_channels):
         fig_name = f"channel_{ch}_erp_rest.png"
         figure_path = os.path.join(figure_dir, fig_name)
         plot_rest_erp(
