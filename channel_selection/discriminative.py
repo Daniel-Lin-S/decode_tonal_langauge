@@ -87,7 +87,7 @@ def generate_figures(
             figure_path=fig_path,
         )
 
-        print('Saved discriminative figure to', fig_path)
+    print(f"Saved discriminative channel figures to {figure_dir}")
 
 
 def test_discriminative_power(

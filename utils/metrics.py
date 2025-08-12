@@ -75,7 +75,7 @@ def compute_classification_metrics_joint(
 
     metric_funcs = {
         'accuracy': skmetrics.accuracy_score,
-        'f1': lambda y_true, y_pred: skmetrics.f1_score(y_true, y_pred, average='weighted'),
+        'f1_score': lambda y_true, y_pred: skmetrics.f1_score(y_true, y_pred, average='weighted'),
         'precision': lambda y_true, y_pred: skmetrics.precision_score(y_true, y_pred, average='weighted'),
         'recall': lambda y_true, y_pred: skmetrics.recall_score(y_true, y_pred, average='weighted'),
         'cohen_kappa': skmetrics.cohen_kappa_score,
@@ -87,7 +87,11 @@ def compute_classification_metrics_joint(
             results[m] = metric_funcs[m](joint_true, joint_preds)
         else:
             try:
-                results[m] = getattr(skmetrics, m)(joint_true, joint_preds)
+                metric_func = getattr(skmetrics, m)
+                if 'average' in metric_func.__code__.co_varnames:
+                    results[m] = metric_func(joint_true, joint_preds, average='weighted')
+                else:
+                    results[m] = metric_func(joint_true, joint_preds)
             except AttributeError:
                 raise ValueError(
                     f"Metric '{m}' is not recognized in sklearn.metrics, and "

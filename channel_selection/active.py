@@ -121,7 +121,8 @@ def generate_figures(
             sampling_rate=ecog_sf,
             figure_path=figure_path,
         )
-        print(f"Saved ERP plot for channel {ch} to {figure_path}")
+    
+    print(f"Saved ERP vs Rest plots for {n_channels_plot} channels to {figure_dir}")
 
 
 def plot_rest_erp(
