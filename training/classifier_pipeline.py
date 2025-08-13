@@ -20,7 +20,9 @@ from models.classifier_factory import get_classifier_by_name
 from models.classifier_trainer import LightningClassifier
 from utils.utils import set_seeds
 from utils.visualise import plot_confusion_matrix
-from utils.metrics import compute_classification_metrics_joint
+from utils.metrics import (
+    compute_classification_metrics_joint, compute_classification_metrics
+)
 
 
 def train_separate_targets(
@@ -64,6 +66,15 @@ def train_separate_targets(
     metric_values: Dict[str, List[float]] = {m: [] for m in metrics if m != "confusion_matrix"}
     confusion_mat = np.zeros((n_classes, n_classes)) if "confusion_matrix" in metrics else None
     model_size = 0
+
+    individual_metrics = {
+        target: {m: [] for m in metrics if m != "confusion_matrix"}
+        for target in params.targets
+    }
+    individual_confusion_mat = {
+        target: np.zeros((n_classes_dict[target], n_classes_dict[target]))
+        for target in params.targets
+    } if "confusion_matrix" in metrics else None
 
     for i, seed in enumerate(seeds):
         set_seeds(int(seed))
@@ -111,12 +122,12 @@ def train_separate_targets(
 
             tb_logger = TensorBoardLogger(
                 save_dir=os.path.join(params.log_dir, f"{params.model_name}_{target}_tb"),
-                name=f"sub_{params.subject_id}",
+                name=f"subject_{params.subject_id}",
                 version='seed_'+str(seed)
             )
             csv_logger = CSVLogger(
                 save_dir= os.path.join(params.log_dir, f"{params.model_name}_{target}_csv"),
-                name=f"sub_{params.subject_id}",
+                name=f"subject_{params.subject_id}",
                 version='seed_'+str(seed)
             )
 
@@ -147,6 +158,18 @@ def train_separate_targets(
             preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
             all_preds[target] = preds
 
+            target_metrics = compute_classification_metrics(
+                all_true[target], all_preds[target], metrics=metrics
+            )
+
+            for m in metrics:
+                if m == "confusion_matrix":
+                    continue
+                individual_metrics[target][m].append(target_metrics[m])
+            
+            if individual_confusion_mat is not None and "confusion_matrix" in target_metrics:
+                individual_confusion_mat[target] += target_metrics["confusion_matrix"]
+
         joint_metrics = compute_classification_metrics_joint(
             all_true, all_preds, metrics=metrics,
             verbose=verbose > 1
@@ -166,7 +189,10 @@ def train_separate_targets(
         "channels": sorted(channels),
         "seeds": seeds.tolist(),
         "class_labels": class_labels,
+        "individual_metrics": individual_metrics,
+        "individual_confusion_matrix": individual_confusion_mat
     }
+
     return result_info, confusion_mat, class_labels
 
 
@@ -193,7 +219,7 @@ def train_joint_targets(
         )
 
     n_classes = len(np.unique(data['labels']))
-    class_labels = class_labels = data_handler.prepare_class_labels(data['n_classes_dict'])
+    class_labels = data_handler.prepare_class_labels(data['n_classes_dict'])
 
     metrics = getattr(params, "metrics", ["accuracy"])
     metric_values: Dict[str, List[float]] = {m: [] for m in metrics if m != "confusion_matrix"}
@@ -236,13 +262,13 @@ def train_joint_targets(
         target_name = "_".join(params.targets) if len(params.targets) > 1 else params.targets[0]
         tb_logger = TensorBoardLogger(
             save_dir=os.path.join(params.log_dir, f"{params.model_name}_{target_name}_tb"),
-            name=f"sub_{params.subject_id}",
+            name=f"subject_{params.subject_id}",
             version='seed_'+str(seed)
         )
 
         csv_logger = CSVLogger(
             save_dir=os.path.join(params.log_dir, f"{params.model_name}_{target_name}_csv"),
-            name=f"sub_{params.subject_id}",
+            name=f"subject_{params.subject_id}",
             version='seed_'+str(seed)
         )
 
@@ -264,8 +290,8 @@ def train_joint_targets(
         preds = torch.cat(trainer.predict(lightning_model, loaders[2])).cpu().numpy()
         true = np.concatenate([b[1].cpu().numpy() for b in loaders[2]])
 
-        joint_metrics = compute_classification_metrics_joint(
-            {"label": true}, {"label": preds}, metrics=metrics,
+        joint_metrics = compute_classification_metrics(
+            true, preds, metrics=metrics,
             verbose=verbose > 1
         )
 
@@ -302,8 +328,7 @@ def save_and_plot_results(
     params: Namespace,
     result_info: Dict,
     confusion_matrix: np.ndarray,
-    class_labels: List[str],
-    experiment_log_dir: str
+    class_labels: List[str]
 ) -> None:
     """Save results to CSV and generate plots."""
 
@@ -313,43 +338,55 @@ def save_and_plot_results(
     if isinstance(aggregates, str):
         aggregates = [aggregates]
 
-    results = {
-        "model_name": params.model_name,
-        "model_size": result_info["model_size"],
-        "subject": params.subject_id,
-        "target": ",".join(params.targets),
-        "channels": ",".join(map(str, result_info.get("channels", []))),
-        "seeds": str(result_info.get("seeds"))
-    }
+    def _build_row(metric_dict: Dict[str, list], target_label: str) -> Dict[str, object]:
+        """Create one CSV row from a dict: metric -> list[float] across seeds."""
+        row = {
+            "model_name": params.model_name,
+            "model_size": result_info.get("model_size"),
+            "subject": params.subject_id,
+            "target": target_label,
+            "channels": ",".join(map(str, result_info.get("channels", []))),
+            "seeds": str(result_info.get("seeds")),
+        }
+        for m in metrics:
+            if m == "confusion_matrix":
+                continue
+            values = metric_dict.get(m, [])
+            for agg in aggregates:
+                agg_func = getattr(np, agg, None)
+                if agg_func is None:
+                    raise ValueError(
+                        f"Aggregate function '{agg}' is not recognized in numpy. "
+                        "Please change evaluation.aggregates parameter."
+                    )
+                row[f"{m}_{agg}"] = float(agg_func(values)) if len(values) else np.nan
+            row[f"{m}_all"] = str(list(values))
+        return row
 
-    for m in metrics:
-        if m == "confusion_matrix":  # already aggregated
-            continue
-        values = result_info[m]
-        for agg in aggregates:
-            try:
-                agg_func = getattr(np, agg)
-            except AttributeError:
-                raise ValueError(
-                    f"Aggregate function '{agg}' is not recognized in numpy."
-                    "Please change evaluation.aggregates parameter."
-                )
-            results[f"{m}_{agg}"] = float(agg_func(values))
-        results[f"{m}_all"] = str(values)
+    rows = []
 
-    if confusion_matrix is not None and "confusion_matrix" in metrics:
-        results["confusion_matrix"] = str(confusion_matrix.tolist())
+    joint_metric_dict = {m : result_info[m] for m in metrics if m != "confusion_matrix"}
+    rows.append(_build_row(joint_metric_dict, ", ".join(params.targets)))
 
-    df = pd.DataFrame([results])
-    result_path = os.path.join(experiment_log_dir, "results.csv")
+    if "individual_metrics" in result_info:
+        individual_metrics = result_info["individual_metrics"]
+        for target, metrics_dict in individual_metrics.items():
+            rows.append(_build_row(metrics_dict, str(target)))
+
+    df = pd.DataFrame(rows)
+
+    result_path = os.path.join(params.log_dir, "results.csv")
     if os.path.exists(result_path):
         df.to_csv(result_path, mode="a", header=False, index=False)
     else:
         df.to_csv(result_path, index=False)
     print(f"Results saved to {result_path}")
 
-    figure_dir = os.path.join(params.log_dir, "figures")
+    figure_dir = os.path.join(params.log_dir, f"figures/subject_{params.subject_id}")
     os.makedirs(figure_dir, exist_ok=True)
+
+    cm_dir = os.path.join(params.log_dir, f"confusion_matrices/subject_{params.subject_id}")
+    os.makedirs(cm_dir, exist_ok=True)
 
     if confusion_matrix is not None and "confusion_matrix" in metrics:
         add_numbers = confusion_matrix.shape[0] <= 10
@@ -360,3 +397,27 @@ def save_and_plot_results(
             figure_path=os.path.join(figure_dir, "confusion_matrix.png"),
         )
         print(f"Confusion matrix saved to {figure_dir}/confusion_matrix.png")
+
+        cm_csv_path = os.path.join(cm_dir, "confusion_matrix.csv")
+        pd.DataFrame(confusion_matrix).to_csv(cm_csv_path, index=False)
+
+    if "individual_confusion_matrix" in result_info:
+        individual_confusion_matrices = result_info["individual_confusion_matrix"]
+        for target, cm in individual_confusion_matrices.items():
+
+            cm_figure_path = os.path.join(
+                cm_dir, f"confusion_matrix_{target}.png"
+            )
+
+            if cm is not None:
+                add_numbers = cm.shape[0] <= 10
+                plot_confusion_matrix(
+                    cm,
+                    add_numbers,
+                    label_names=class_labels,
+                    figure_path=cm_figure_path,
+                )
+                print(f"Confusion matrix for {target} saved to {cm_figure_path}")
+
+            cm_csv_path = os.path.join(figure_dir, f"confusion_matrix_{target}.csv")
+            pd.DataFrame(cm).to_csv(cm_csv_path, index=False)

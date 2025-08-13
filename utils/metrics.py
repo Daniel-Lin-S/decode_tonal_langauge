@@ -2,6 +2,68 @@ import numpy as np
 from sklearn import metrics as skmetrics
 
 
+def compute_classification_metrics(
+        true: np.ndarray, preds: np.ndarray,
+        metrics: list = ['accuracy'],
+        verbose: bool = False
+    ) -> dict:
+    """
+    Compute metrics (e.g., accuracy, F1 score)
+    for a single classification task based on true and predicted labels.
+
+    Parameters
+    ----------
+    true : np.ndarray
+        Array of true labels.
+    preds : np.ndarray
+        Array of predicted labels.
+    metrics : list, optional
+        A list of metric names to compute. Names should correspond
+        to functions in ``sklearn.metrics`` (e.g. 'accuracy',
+        'f1', 'precision', 'recall', 'cohen_kappa',
+        'confusion_matrix'). Default is ['accuracy'].
+    verbose : bool, optional
+        If True, prints unique labels and predictions.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are metric names and
+        values are the computed metric values.
+    """
+    if verbose:
+        print('Unique labels in true: {}'.format(set(true)))
+        print('Unique predictions in preds: {}'.format(set(preds)))
+
+    metric_funcs = {
+        'accuracy': skmetrics.accuracy_score,
+        'f1_score': lambda y_true, y_pred: skmetrics.f1_score(y_true, y_pred, average='weighted'),
+        'precision': lambda y_true, y_pred: skmetrics.precision_score(y_true, y_pred, average='weighted'),
+        'recall': lambda y_true, y_pred: skmetrics.recall_score(y_true, y_pred, average='weighted'),
+        'cohen_kappa': skmetrics.cohen_kappa_score,
+        'confusion_matrix': skmetrics.confusion_matrix
+    }
+
+    results = {}
+    for m in metrics:
+        if m in metric_funcs:
+            results[m] = metric_funcs[m](true, preds)
+        else:
+            try:
+                metric_func = getattr(skmetrics, m)
+                if 'average' in metric_func.__code__.co_varnames:
+                    results[m] = metric_func(true, preds, average='weighted')
+                else:
+                    results[m] = metric_func(true, preds)
+            except AttributeError:
+                raise ValueError(
+                    f"Metric '{m}' is not recognized in sklearn.metrics, and "
+                    f"not part of the supported metrics: {list(metric_funcs.keys())}."
+                )
+
+    return results
+
+
 def compute_classification_metrics_joint(
         all_true: dict, all_preds: dict,
         metrics: list = ['accuracy'],
@@ -25,6 +87,9 @@ def compute_classification_metrics_joint(
         to functions in ``sklearn.metrics`` (e.g. 'accuracy',
         'f1', 'precision', 'recall', 'cohen_kappa',
         'confusion_matrix'). Default is ['accuracy'].
+    verbose : bool, optional
+        If True, prints unique labels and predictions for each target.
+        Default is False.
 
     Returns
     -------
@@ -36,8 +101,6 @@ def compute_classification_metrics_joint(
         raise ValueError("Keys in all_true and all_preds must match.")
 
     targets = list(all_true.keys())
-
-    results = {}
 
     if verbose:
         for target in targets:
@@ -73,29 +136,4 @@ def compute_classification_metrics_joint(
         axis=1
     )
 
-    metric_funcs = {
-        'accuracy': skmetrics.accuracy_score,
-        'f1_score': lambda y_true, y_pred: skmetrics.f1_score(y_true, y_pred, average='weighted'),
-        'precision': lambda y_true, y_pred: skmetrics.precision_score(y_true, y_pred, average='weighted'),
-        'recall': lambda y_true, y_pred: skmetrics.recall_score(y_true, y_pred, average='weighted'),
-        'cohen_kappa': skmetrics.cohen_kappa_score,
-        'confusion_matrix': skmetrics.confusion_matrix
-    }
-
-    for m in metrics:
-        if m in metric_funcs:
-            results[m] = metric_funcs[m](joint_true, joint_preds)
-        else:
-            try:
-                metric_func = getattr(skmetrics, m)
-                if 'average' in metric_func.__code__.co_varnames:
-                    results[m] = metric_func(joint_true, joint_preds, average='weighted')
-                else:
-                    results[m] = metric_func(joint_true, joint_preds)
-            except AttributeError:
-                raise ValueError(
-                    f"Metric '{m}' is not recognized in sklearn.metrics, and "
-                    f"not part of the supported metrics: {list(metric_funcs.keys())}."
-                )
-
-    return results
+    return compute_classification_metrics(joint_true, joint_preds, metrics)

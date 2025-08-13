@@ -11,37 +11,6 @@ from .foundation.CBraMod import CBraMod
 from .classifier import ClassifierModel
 
 
-def _get_activation(activation: str) -> nn.Module:
-    """
-    Get the activation function based on the provided name.
-
-    Parameters
-    ----------
-    activation : str
-        Name of the activation function.
-
-    Returns
-    -------
-    nn.Module
-        The corresponding activation function module.
-    """
-    if activation == 'ELU':
-        return nn.ELU()
-    elif activation == 'ReLU':
-        return nn.ReLU()
-    elif activation == 'LeakyReLU':
-        return nn.LeakyReLU()
-    elif activation == 'PReLU':
-        return nn.PReLU()
-    elif activation == 'GLU':
-        return nn.GLU()
-    elif activation == 'GELU':
-        return nn.GELU()
-    else:
-        raise ValueError(
-            f"Unsupported activation function: {activation}")
-
-
 class CBraModClassifier(ClassifierModel):
     """
     A classifier using the CBraMod backbone
@@ -139,3 +108,34 @@ class CBraModClassifier(ClassifierModel):
         features = self.backbone.forward(x)
 
         return self.classifier(features)
+
+
+def _get_activation(activation: str) -> nn.Module:
+    """
+    Get the activation function based on the provided name.
+
+    Parameters
+    ----------
+    activation : str
+        Name of the activation function.
+
+    Returns
+    -------
+    nn.Module
+        The corresponding activation function module.
+    """
+    if activation == 'ELU':
+        return nn.ELU()
+    elif activation == 'ReLU':
+        return nn.ReLU()
+    elif activation == 'LeakyReLU':
+        return nn.LeakyReLU()
+    elif activation == 'PReLU':
+        return nn.PReLU()
+    elif activation == 'GLU':
+        return nn.GLU()
+    elif activation == 'GELU':
+        return nn.GELU()
+    else:
+        raise ValueError(
+            f"Unsupported activation function: {activation}")

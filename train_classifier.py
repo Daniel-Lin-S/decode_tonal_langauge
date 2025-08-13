@@ -62,9 +62,9 @@ def run(config: dict) -> str:
     )
 
     params.log_dir = os.path.join(base_log_dir, exp_name)
+    os.makedirs(params.log_dir, exist_ok=True)
 
     # Copy config to log directory for record keeping
-    os.makedirs(params.log_dir, exist_ok=True)
     sample_cfg_path = os.path.join(params.sample_dir, 'config.yaml')
     if os.path.exists(sample_cfg_path):
         base_cfg = load_config(sample_cfg_path)
@@ -123,11 +123,9 @@ def _prepare_subject_params(base_params: Namespace, subject_id: str) -> Namespac
     subject_params.sample_path = os.path.join(
         base_params.sample_dir, f'subject_{subject_id}.npz'
     )
-    subject_params.log_dir = os.path.join(base_params.log_dir, f"subject_{subject_id}")
     subject_params.channel_file = os.path.join(
         base_params.channel_selection_dir, f'subject_{subject_id}.json'
     )
-    os.makedirs(subject_params.log_dir, exist_ok=True)
     return subject_params
 
 
