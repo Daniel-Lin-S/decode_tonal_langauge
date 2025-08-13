@@ -110,8 +110,7 @@ def run(config: dict) -> str:
             results, conf_mat, labels = train_joint_targets(subject_params, seeds)
 
         save_and_plot_results(
-            subject_params, results, conf_mat, labels,
-            experiment_log_dir=params.log_dir
+            subject_params, results, conf_mat, labels
         )
 
     return params.log_dir

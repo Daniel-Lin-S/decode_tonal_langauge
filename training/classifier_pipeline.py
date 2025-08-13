@@ -34,18 +34,20 @@ def train_separate_targets(
 
     all_datasets: Dict[str, TensorDataset] = {}
     input_shapes: Dict[str, Tuple[int, int]] = {}
-    channels = set()
+    channels: Dict[str, List[int]] = {}
     n_classes_dict: Dict[str, int] = {}
 
-    data_handler = ClassificationSampleHandler(params)
-
     for target in params.targets:
-        data = data_handler.load_data()
+        target_params = Namespace(**vars(params))
+        target_params.targets = [target]
+        target_handler = ClassificationSampleHandler(target_params)
+        data = target_handler.load_data()
+
         features = data['features']
         n_classes_dict.update({target: data['n_classes_dict'][target]})
-        channels.update(data['selected_channels'])
+        channels[target] = data['selected_channels']
 
-        all_datasets[target] = data_handler.prepare_torch_dataset(
+        all_datasets[target] = target_handler.prepare_torch_dataset(
             features, data['labels'], params.device)
 
         input_shapes[target] = features.shape[1:]
@@ -56,7 +58,7 @@ def train_separate_targets(
                 f"for target {target}"
             )
 
-    class_labels = data_handler.prepare_class_labels(data['n_classes_dict'])
+    class_labels = ClassificationSampleHandler(params).prepare_class_labels(data['n_classes_dict'])
 
     n_classes = 1
     for cls in n_classes_dict.values():
@@ -186,7 +188,7 @@ def train_separate_targets(
     result_info = {
         **metric_values,
         "model_size": model_size,
-        "channels": sorted(channels),
+        "channels": channels,
         "seeds": seeds.tolist(),
         "class_labels": class_labels,
         "individual_metrics": individual_metrics,
@@ -338,14 +340,51 @@ def save_and_plot_results(
     if isinstance(aggregates, str):
         aggregates = [aggregates]
 
-    def _build_row(metric_dict: Dict[str, list], target_label: str) -> Dict[str, object]:
+    joint_label = ", ".join(getattr(params, "targets", []))
+
+    # collect channels
+    def _norm_channel_list(chs) -> list[int]:
+        if chs is None:
+            return []
+        # flatten-like but expect already flat lists
+        return sorted({int(c) for c in chs})
+
+    def _channels_for(target_label: str) -> str:
+        """
+        Return a CSV string of channels for a given target label.
+        - If result_info['channels'] is list[int]: same for all targets (and joint).
+        - If dict[str, list[int]]: pick per-target; for joint -> union over params.targets.
+        """
+        chs_info = result_info.get("channels", [])
+        # List[int] → directly use for all rows
+        if isinstance(chs_info, (list, tuple, np.ndarray)):
+            chs = _norm_channel_list(chs_info)
+            return ",".join(map(str, chs))
+        # Dict[str, List[int]]
+        if isinstance(chs_info, dict):
+            if target_label == joint_label:
+                # union over declared targets
+                union = set()
+                for t in getattr(params, "targets", []):
+                    lst = chs_info.get(str(t), [])
+                    union.update(int(c) for c in lst)
+                chs = sorted(union)
+            else:   # individual target
+                chs = _norm_channel_list(chs_info.get(str(target_label), []))
+            return ",".join(map(str, chs))
+
+        return ""
+
+    def _build_row(
+            metric_dict: Dict[str, list], target_label: str
+        ) -> Dict[str, object]:
         """Create one CSV row from a dict: metric -> list[float] across seeds."""
         row = {
             "model_name": params.model_name,
             "model_size": result_info.get("model_size"),
             "subject": params.subject_id,
             "target": target_label,
-            "channels": ",".join(map(str, result_info.get("channels", []))),
+            "channels": _channels_for(target_label),
             "seeds": str(result_info.get("seeds")),
         }
         for m in metrics:
@@ -361,6 +400,7 @@ def save_and_plot_results(
                     )
                 row[f"{m}_{agg}"] = float(agg_func(values)) if len(values) else np.nan
             row[f"{m}_all"] = str(list(values))
+
         return row
 
     rows = []
