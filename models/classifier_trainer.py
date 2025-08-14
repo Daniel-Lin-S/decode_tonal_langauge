@@ -15,8 +15,8 @@ from pytorch_lightning.loggers import Logger, CSVLogger
 import os
 import pandas as pd
 
-
 from .classifier import ClassifierModel
+from .utils import split_decay_groups
 
 
 class LightningClassifier(pl.LightningModule):
@@ -25,6 +25,7 @@ class LightningClassifier(pl.LightningModule):
     def __init__(
             self, model: ClassifierModel,
             learning_rate: float=0.0005,
+            weight_decay: float=0.0
         ) -> None:
         """
         Parameters
@@ -37,6 +38,7 @@ class LightningClassifier(pl.LightningModule):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
 
         self.criterion = nn.CrossEntropyLoss()
         self.acc_metric = MulticlassAccuracy(
@@ -59,7 +61,17 @@ class LightningClassifier(pl.LightningModule):
         return self.model(x)
 
     def configure_optimizers(self):
-        return NAdam(self.model.parameters(), lr=self.learning_rate)
+        decay, no_decay = split_decay_groups(self.named_parameters())
+
+        opt = NAdam(
+            [
+                {"params": decay, "weight_decay": float(self.weight_decay)},
+                {"params": no_decay, "weight_decay": 0.0},
+            ],
+            lr=float(self.learning_rate),
+        )
+
+        return opt
 
     # ------------------------------------------------------------------
     # Training / Validation Steps
@@ -75,6 +87,10 @@ class LightningClassifier(pl.LightningModule):
                  on_step=True, on_epoch=True, logger=True)
         self.log("train/accuracy", accuracy, prog_bar=False,
                     on_step=False, on_epoch=True, logger=True)
+        
+        weight_norm = self._compute_weight_norm()
+        self.log("train/weight_norm", weight_norm, prog_bar=False,
+                 on_step=True, on_epoch=False, logger=True)
 
         return {"loss": loss}
     
@@ -152,3 +168,10 @@ class LightningClassifier(pl.LightningModule):
             raise ValueError(f"No logger of type {logger_class} found in the list.")
 
         return self.logger.log_dir
+
+    def _compute_weight_norm(self) -> float:
+        total_norm = 0.0
+        for param in self.model.parameters():
+            if param.requires_grad:
+                total_norm += param.norm(2).item() ** 2
+        return total_norm ** 0.5

@@ -36,6 +36,7 @@ def train_separate_targets(
     input_shapes: Dict[str, Tuple[int, int]] = {}
     channels: Dict[str, List[int]] = {}
     n_classes_dict: Dict[str, int] = {}
+    individual_class_labels: Dict[str, List[str]] = {}
 
     for target in params.targets:
         target_params = Namespace(**vars(params))
@@ -46,6 +47,9 @@ def train_separate_targets(
         features = data['features']
         n_classes_dict.update({target: data['n_classes_dict'][target]})
         channels[target] = data['selected_channels']
+        individual_class_labels[target] = target_handler.prepare_class_labels(
+            {target: data['n_classes_dict'][target]}
+        )
 
         all_datasets[target] = target_handler.prepare_torch_dataset(
             features, data['labels'], params.device)
@@ -113,7 +117,10 @@ def train_separate_targets(
             if model_verbose:
                 print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
-            lightning_model = LightningClassifier(model, learning_rate=params.lr)
+            lightning_model = LightningClassifier(
+                model, learning_rate=params.lr,
+                weight_decay=float(getattr(params, "weight_decay", 0.0))
+            )
             lightning_model.verbose = model_verbose
 
             accelerator = "gpu" if "cuda" in params.device else "cpu"
@@ -123,12 +130,12 @@ def train_separate_targets(
             )
 
             tb_logger = TensorBoardLogger(
-                save_dir=os.path.join(params.log_dir, f"{params.model_name}_{target}_tb"),
+                save_dir=os.path.join(params.log_dir, f"{target}_tb"),
                 name=f"subject_{params.subject_id}",
                 version='seed_'+str(seed)
             )
             csv_logger = CSVLogger(
-                save_dir= os.path.join(params.log_dir, f"{params.model_name}_{target}_csv"),
+                save_dir= os.path.join(params.log_dir, f"{target}_csv"),
                 name=f"subject_{params.subject_id}",
                 version='seed_'+str(seed)
             )
@@ -192,7 +199,8 @@ def train_separate_targets(
         "seeds": seeds.tolist(),
         "class_labels": class_labels,
         "individual_metrics": individual_metrics,
-        "individual_confusion_matrix": individual_confusion_mat
+        "individual_confusion_matrix": individual_confusion_mat,
+        "individual_class_labels": individual_class_labels
     }
 
     return result_info, confusion_mat, class_labels
@@ -252,7 +260,10 @@ def train_joint_targets(
         if model_verbose:
             print(f"Number of trainable parameters: {model.get_layer_nparams()}")
 
-        lightning_model = LightningClassifier(model, learning_rate=params.lr)
+        lightning_model = LightningClassifier(
+            model, learning_rate=params.lr,
+            weight_decay=float(getattr(params, "weight_decay", 0.0))
+        )
         lightning_model.verbose = model_verbose
 
         accelerator = "gpu" if "cuda" in params.device else "cpu"
@@ -263,13 +274,13 @@ def train_joint_targets(
 
         target_name = "_".join(params.targets) if len(params.targets) > 1 else params.targets[0]
         tb_logger = TensorBoardLogger(
-            save_dir=os.path.join(params.log_dir, f"{params.model_name}_{target_name}_tb"),
+            save_dir=os.path.join(params.log_dir, f"{target_name}_tb"),
             name=f"subject_{params.subject_id}",
             version='seed_'+str(seed)
         )
 
         csv_logger = CSVLogger(
-            save_dir=os.path.join(params.log_dir, f"{params.model_name}_{target_name}_csv"),
+            save_dir=os.path.join(params.log_dir, f"{target_name}_csv"),
             name=f"subject_{params.subject_id}",
             version='seed_'+str(seed)
         )
@@ -444,9 +455,10 @@ def save_and_plot_results(
     if "individual_confusion_matrix" in result_info:
         individual_confusion_matrices = result_info["individual_confusion_matrix"]
         for target, cm in individual_confusion_matrices.items():
+            target_class_labels = result_info["individual_class_labels"].get(target, class_labels)
 
             cm_figure_path = os.path.join(
-                cm_dir, f"confusion_matrix_{target}.png"
+                figure_dir, f"confusion_matrix_{target}.png"
             )
 
             if cm is not None:
@@ -454,10 +466,10 @@ def save_and_plot_results(
                 plot_confusion_matrix(
                     cm,
                     add_numbers,
-                    label_names=class_labels,
+                    label_names=target_class_labels,
                     figure_path=cm_figure_path,
                 )
                 print(f"Confusion matrix for {target} saved to {cm_figure_path}")
 
-            cm_csv_path = os.path.join(figure_dir, f"confusion_matrix_{target}.csv")
+            cm_csv_path = os.path.join(cm_dir, f"confusion_matrix_{target}.csv")
             pd.DataFrame(cm).to_csv(cm_csv_path, index=False)

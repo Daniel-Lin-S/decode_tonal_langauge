@@ -6,13 +6,17 @@ from matplotlib_venn import venn3
 import json
 import pandas as pd
 import seaborn as sns
+from inspect import signature
 
 
 def plot_confusion_matrix(
         confusion_matrix: np.ndarray,
         add_numbers: bool=False,
         label_names: Optional[List[str]]=None,
-        figure_path: Optional[str]=None
+        figure_path: Optional[str]=None,
+        cmap: str='Blues',
+        title: str='Confusion Matrix',
+        imshow_kwargs: Optional[dict] = None
     ) -> None:
     """
     Plot the confusion matrix.
@@ -31,20 +35,38 @@ def plot_confusion_matrix(
     figure_path : Optional[str], default=None
         The file path where the plot will be saved. If None, the plot will be displayed
         interactively instead of being saved.
+    cmap : str, default='Blues'
+        The colormap to use for the confusion matrix.
+    imshow_kwargs : Optional[dict], default=None
+        Additional keyword arguments to pass to `plt.imshow`.
+        This can be used to set parameters like `vmin`, `vmax`, etc.
     """
+
+    if imshow_kwargs is None:
+        imshow_kwargs = {}
+
     plt.figure(figsize=(8, 6))
-    plt.imshow(confusion_matrix, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.title('Confusion Matrix', fontsize=20)
+    plt.imshow(
+        confusion_matrix, interpolation='nearest',
+        cmap=cmap, **imshow_kwargs
+    )
+    plt.title(title, fontsize=20)
     plt.colorbar()
     plt.xlabel('Predicted Label', fontsize=18)
     plt.ylabel('True Label', fontsize=18)
 
     if label_names is not None:
-        plt.xticks(np.arange(len(label_names)), label_names, rotation=45)
-        plt.yticks(np.arange(len(label_names)), label_names)
+        plt.xticks(
+            np.arange(len(label_names)), label_names,
+            rotation=45, fontsize=14
+        )
+        plt.yticks(
+            np.arange(len(label_names)), label_names,
+            fontsize=14
+        )
     else:
-        plt.xticks(np.arange(confusion_matrix.shape[1]))
-        plt.yticks(np.arange(confusion_matrix.shape[0]))
+        plt.xticks(np.arange(confusion_matrix.shape[1]), fontsize=14)
+        plt.yticks(np.arange(confusion_matrix.shape[0]), fontsize=14)
 
     if add_numbers:
         for i in range(confusion_matrix.shape[0]):
@@ -53,7 +75,9 @@ def plot_confusion_matrix(
                     j, i, f"{confusion_matrix[i, j]:.0f}",
                     ha="center", va="center",
                     color="white" if confusion_matrix[
-                        i, j] > confusion_matrix.max() / 2 else "black")
+                        i, j] > confusion_matrix.max() / 2 else "black",
+                    fontsize=15
+                )
 
     plt.grid(False)
     plt.tight_layout()
@@ -63,6 +87,52 @@ def plot_confusion_matrix(
         plt.close()
     else:
         plt.show()
+
+
+def compare_confusion_matrices(
+        confusion_matrix: np.ndarray,
+        baseline_matrix: np.ndarray,
+        title: str="Confusion Matrix Difference",
+        label_names: Optional[List[str]]=None,
+        figure_path: Optional[str]=None
+):
+    """
+    Compare two confusion matrices by plotting the difference.
+
+    Parameters
+    ----------
+    confusion_matrix : np.ndarray
+        The confusion matrix to compare against the baseline.
+        Shape should be (n_classes, n_classes).
+    baseline_matrix : np.ndarray
+        The baseline confusion matrix to compare against.
+        Shape should be (n_classes, n_classes).
+    label_names : Optional[List[str]], default=None
+        A list of class names corresponding to the rows and
+        columns of the confusion matrices.
+        If None, numerical indices will be used as labels.
+    figure_path : Optional[str], default=None
+        The file path where the plot will be saved. \n
+        If None, the plot will be displayed
+        interactively instead of being saved.
+    """
+    diff = confusion_matrix - baseline_matrix
+
+    kwargs = {
+        'vmin' : -np.max(np.abs(diff)),
+        'vmax' : np.max(np.abs(diff))
+    }
+
+    plot_confusion_matrix(
+        diff,
+        add_numbers=True,
+        label_names=label_names,
+        figure_path=figure_path,
+        cmap='coolwarm',
+        title=title,
+        imshow_kwargs=kwargs
+    )
+
 
 def plot_psd(
         data: np.ndarray,
