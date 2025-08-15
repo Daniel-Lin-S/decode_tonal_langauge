@@ -30,6 +30,9 @@ def train_separate_targets(
     seeds: np.ndarray
 ) -> Tuple[Dict, np.ndarray, List[str]]:
     """Train a separate classifier for each target and combine results."""
+    # DEBUG
+    torch.autograd.set_detect_anomaly(True)
+
     verbose = getattr(params, "verbose", 1)
 
     all_datasets: Dict[str, TensorDataset] = {}
