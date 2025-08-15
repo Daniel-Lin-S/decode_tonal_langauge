@@ -35,10 +35,11 @@ import tdt
 import numpy as np
 import yaml
 import importlib
-from utils.config import dict_to_namespace
-
 import hashlib
 import matplotlib.pyplot as plt
+
+from utils.config import dict_to_namespace
+from data_loading.io_tdt import get_data, get_block_id
 
 
 def run(config: dict) -> str:
@@ -74,15 +75,12 @@ def run(config: dict) -> str:
         subject_dir = os.path.join(params.root_dir, subject_dir)
 
         for dir in os.listdir(subject_dir):
-            try:
-                block_id = int(dir.split('-')[-1].replace('B', ''))
-                print(f'Processing block {block_id} of subject {subject_id}...')
-            except ValueError:
-                print(
-                    f"Skipping directory '{dir}' as it does not match expected format.",
-                    "Expected format: 'HS<subject_id>-<block_id>'.",
-                )
+            block_id = get_block_id(dir)
+
+            if block_id is None:
                 continue
+
+            print(f'Processing block {block_id} of subject {subject_id}...')
 
             ecog_file_name = f'B{block_id}_ecog.npz'
             audio_file_name = f'B{block_id}_sound.npz'
@@ -103,27 +101,20 @@ def run(config: dict) -> str:
                 continue
 
             block_path = os.path.join(subject_dir, dir)
-            block_data = tdt.read_block(block_path)
 
-            data = block_data.streams.EOG1.data
-            ecog_freq = block_data.streams.EOG1.fs
-            audio = block_data.streams.ANIN.data
-            audio = audio[:1, :]   # mono-channel audio
-            audio_freq = block_data.streams.ANIN.fs
+            data_dict = get_data(block_path)
+
+            data = data_dict['ecog']
 
             block_params = dict_to_namespace(
                 {
                     **vars(params),
                     'block_id': block_id,
                     'subject_id': subject_id,
-                    'signal_freq': ecog_freq
+                    'signal_freq': data_dict['fs_ecog']
                 },
                 exclude_keys=['bands']
             )
-
-            print('Audio shape: ', audio.shape)
-            print('ECoG data shape: ', data.shape)
-            print('ECoG sampling frequency:', ecog_freq)
 
             for i, step in enumerate(pre_params.get('steps', [])):
                 module_name = step['module']
@@ -155,13 +146,19 @@ def run(config: dict) -> str:
                     )
 
             if not os.path.exists(ecog_file):
-                np.savez(ecog_file, data=data, sf=block_params.signal_freq)
+                np.savez(
+                    ecog_file, data=data,
+                    sf=block_params.signal_freq
+                )
                 print('Saved ECoG data to:', ecog_file)
             else:
                 print('ECoG data already exists:', ecog_file)
 
             if not os.path.exists(audio_file):
-                np.savez(audio_file, data=audio, sf=int(audio_freq))
+                np.savez(
+                    audio_file, data=data_dict['audio'],
+                    sf=int(data_dict['audio_sf'])
+                )
                 print('Saved audio data to:', audio_file)
             else:
                 print('Audio data already exists:', audio_file)

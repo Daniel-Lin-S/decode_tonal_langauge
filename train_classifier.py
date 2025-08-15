@@ -93,7 +93,6 @@ def run(config: dict) -> str:
     seeds = np.random.randint(0, 10000, getattr(params, "repeat", 1))
 
     subject_filter = _prepare_subject_filter(params, subject_files)
-    print('Subject filter:', subject_filter)
 
     for subject_file in subject_files:
         subject_id = subject_file.split('_')[1].split('.')[0]
