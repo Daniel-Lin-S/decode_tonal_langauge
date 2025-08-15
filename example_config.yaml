@@ -5,33 +5,46 @@ dataset:
 preprocess:
   module: preprocess_main
   params:
+    pipeline:
+      module: preprocess.pipelines.subject_block
+      params:
+        subject_dirs:
+          - Sub1/tdt
+          - Sub2/tdt
+        subject_ids: [1, 2]
     io:
-      root_dir: data/raw
-      subject_dirs:
-        - Sub1/tdt
-        - Sub2/tdt
-      subject_ids: [1, 2]                    # Subject IDs for naming files
-      output_dir: data/processed
-    steps:
-      - module: preproccess.downsample
-        params:
-          downsample_freq: 400
-      
-      - module: preproccess.frequency_filter
-        params:
-          bands:
-          - method: hilbert
-            params:
-              freq_ranges: [70, 150]
-              envelope: true
-          - method: butter
-            params:
-              freqs: [0.3, 100]
-              filter_type: bandpass
+      module: data_loading.io_tdt
+      params:
+        root_dir: data/raw
+        output_dir: data/processed
+    preprocessor:
+      module: preprocess.preprocessor
+    modalities:
+      ecog:
+        type: signal
+        preprocessing:
+          steps:
+            - module: preprocess.downsample
+              params:
+                downsample_freq: 400
 
-      - module: preproccess.zscore_rereference
-        params:
-          rereference_interval: [0., 25.]   # Interval in seconds for rereferencing
+            - module: preprocess.frequency_filter
+              params:
+                bands:
+                  - method: hilbert
+                    params:
+                      freq_ranges: [70, 150]
+                      envelope: true
+                  - method: butter
+                    params:
+                      freqs: [0.3, 100]
+                      filter_type: bandpass
+
+            - module: preprocess.zscore_rereference
+              params:
+                rereference_interval: [0., 25.]
+      audio:
+        type: signal
 
 sample_collection:
   module: extract_samples
