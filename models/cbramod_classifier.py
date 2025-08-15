@@ -102,7 +102,7 @@ class CBraModClassifier(ClassifierModel):
             num_samples = int(x.shape[2] * self.in_dim / self.input_sampling_rate)
             x = resample(x, num_samples, axis=2)
 
-        # cut into segments
+        # cut into patches
         x = x.view(x.shape[0], x.shape[1], -1, self.in_dim)
 
         features = self.backbone.forward(x)

@@ -36,7 +36,6 @@ import numpy as np
 import yaml
 import importlib
 from utils.config import dict_to_namespace
-from typing import List
 
 import hashlib
 import matplotlib.pyplot as plt

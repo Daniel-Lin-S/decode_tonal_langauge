@@ -5,7 +5,8 @@ import os
 import yaml
 import numpy as np
 
-from models.foundation import CBraMod, PretrainTrainer
+from models.foundation import CBraMod
+from training.pretrain import PretrainTrainer
 from utils.utils import set_seeds
 
 
