@@ -18,7 +18,10 @@ def load_block(block_path: str) -> dict:
     return data
 
 
-def save_block(setup_dir: str, subject_id: int, block_id: int, data_dict: dict) -> None:
+def save_block(
+        setup_dir: str, subject_id: int,
+        block_id: int, data_dict: dict
+    ) -> None:
     """Save all modalities in a block to disk."""
     subject_output_dir = os.path.join(setup_dir, f"subject_{subject_id}")
     os.makedirs(subject_output_dir, exist_ok=True)

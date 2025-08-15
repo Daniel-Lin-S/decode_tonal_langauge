@@ -5,37 +5,37 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-
 def preprocess_modalities(data_dict, modalities_cfg, base_params, figure_dir=None):
     """Preprocess each modality according to its type and configured steps."""
     for modality, cfg in modalities_cfg.items():
         mod_type = cfg.get("type")
+        mod_fig_dir = os.path.join(figure_dir, modality) if figure_dir else None
+        os.makedirs(mod_fig_dir, exist_ok=True)
+
         if mod_type is None:
             raise KeyError(f"Modality '{modality}' missing 'type' field in config")
-        if mod_type != "signal":
-            raise NotImplementedError(
-                f"Modality type '{mod_type}' not supported; currently only 'signal'"
-            )
 
         steps = cfg.get("preprocessing", {}).get("steps", [])
         if not steps:
             continue
 
         params = deepcopy(base_params)
-        params.signal_freq = data_dict.get(f"{modality}_sf")
-        mod_fig_dir = os.path.join(figure_dir, modality) if figure_dir else None
 
-        processed, freq = preprocess_signal(
-            data_dict[modality], steps, params, figure_dir=mod_fig_dir
-        )
+        if mod_type == "signal":
+            params.signal_freq = data_dict.get(f"{modality}_sf")
+
+            processed, freq = preprocess_signal(
+                data_dict[modality], steps, params, figure_dir=mod_fig_dir
+            )
+
+            if freq is not None:
+                data_dict[f"{modality}_sf"] = freq
+
         data_dict[modality] = processed
-        if freq is not None:
-            data_dict[f"{modality}_sf"] = freq
 
     return data_dict
 
 
-# TODO - this function does not visualise steps where number of channels change.
 def preprocess_signal(data, steps, block_params, figure_dir=None,
                       num_channels=5, duration=1.0):
     """Apply preprocessing steps sequentially to the data."""
@@ -70,12 +70,13 @@ def preprocess_signal(data, steps, block_params, figure_dir=None,
     return data, block_params.signal_freq
 
 
+# TODO - this function does not take into account steps where number of channels change.
 def visualise_preprocessing(
     before_data: np.ndarray,
     before_freq: float,
     after_data: np.ndarray,
     block_params: object,
-    block_figure_dir: str,
+    figure_dir: str,
     step_index: int,
     module_name: str,
     num_channels: int,
@@ -129,7 +130,7 @@ def visualise_preprocessing(
     fig.subplots_adjust(top=0.9)
 
     fig_path = os.path.join(
-        block_figure_dir,
+        figure_dir,
         f"step{step_index + 1}_{module_name.split('.')[-1]}.png",
     )
     fig.savefig(fig_path, dpi=500)

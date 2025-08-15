@@ -6,9 +6,12 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 from scipy.signal import resample
+import importlib
+from inspect import signature
 
 from .foundation.CBraMod import CBraMod
 from .classifier import ClassifierModel
+from .utils import get_activation
 
 
 class CBraModClassifier(ClassifierModel):
@@ -25,9 +28,11 @@ class CBraModClassifier(ClassifierModel):
             input_sampling_rate: int = 200,
             use_pretrained_weights: bool = True,
             pretrained_weights_path: str = None,
+            freeze_backbone: bool = False,
             backbone_kwargs: dict = {},
-            activation: str='ELU',
-            device: str = 'cpu'
+            device: str = 'cpu',
+            classification_head: str=None,
+            classification_head_kwargs: dict = {}
         ):
         """
         Parameters
@@ -47,6 +52,9 @@ class CBraModClassifier(ClassifierModel):
             Whether to use pretrained weights, by default True.
         pretrained_weights_path : str, optional
             Path to the pretrained weights file, by default None.
+        freeze_backbone : bool, optional
+            Whether to freeze the backbone weights, by default False.
+            If True, the backbone weights will not be updated during training.
         backbone_kwargs : dict, optional
             Additional keyword arguments for the CBraMod backbone, by default {}.
             Warning: if you use different settings from the default,
@@ -55,6 +63,12 @@ class CBraModClassifier(ClassifierModel):
             Activation function to use in the classifier, by default 'ELU'.
         device : str, optional
             Device to load the backbone model onto, by default 'cpu'.
+        classification_head : str, optional
+            The full path to a custom classification head class,
+            if not given, a default linear layer will be used.
+        classification_head_kwargs : dict, optional
+            Additional keyword arguments for the classification head,
+            by default {}.
         """
         super(CBraModClassifier, self).__init__(n_classes)
         self.backbone = CBraMod(**backbone_kwargs)
@@ -74,13 +88,29 @@ class CBraModClassifier(ClassifierModel):
 
         self.backbone.proj_out = nn.Identity()
 
-        self.classifier = nn.Sequential(
-            Rearrange('b c s d -> b (c s d)'),
-            nn.Linear(input_channels * input_length, input_length),
-            _get_activation(activation),
-            nn.Dropout(),
-            nn.Linear(input_length, n_classes)
-        )
+        if classification_head:
+            module_name, class_name = classification_head.rsplit('.', 1)
+            module = importlib.import_module(module_name)
+            ClassifierHead = getattr(module, class_name)
+
+            constructor_args = signature(ClassifierHead.__init__).parameters
+
+            self._initialise_classification_head_kwargs(
+                input_channels, input_length,
+                classification_head_kwargs, constructor_args
+            )
+
+            self.classifier = ClassifierHead(
+                n_classes=n_classes,
+                **classification_head_kwargs
+            )
+        else:
+            self.classifier = nn.Linear(input_length * input_channels, n_classes)
+
+
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
         """
@@ -109,33 +139,19 @@ class CBraModClassifier(ClassifierModel):
 
         return self.classifier(features)
 
-
-def _get_activation(activation: str) -> nn.Module:
-    """
-    Get the activation function based on the provided name.
-
-    Parameters
-    ----------
-    activation : str
-        Name of the activation function.
-
-    Returns
-    -------
-    nn.Module
-        The corresponding activation function module.
-    """
-    if activation == 'ELU':
-        return nn.ELU()
-    elif activation == 'ReLU':
-        return nn.ReLU()
-    elif activation == 'LeakyReLU':
-        return nn.LeakyReLU()
-    elif activation == 'PReLU':
-        return nn.PReLU()
-    elif activation == 'GLU':
-        return nn.GLU()
-    elif activation == 'GELU':
-        return nn.GELU()
-    else:
-        raise ValueError(
-            f"Unsupported activation function: {activation}")
+    def _initialise_classification_head_kwargs(
+            self, input_channels, input_length,
+            classification_head_kwargs, constructor_args
+        ):
+        if 'hidden_dim' in constructor_args and (
+                'hidden_dim' not in classification_head_kwargs
+            ):
+            classification_head_kwargs['hidden_dim'] = input_length
+        if 'input_dim' in constructor_args:
+            classification_head_kwargs['input_dim'] = input_length * input_channels
+        if 'n_classes' in constructor_args:
+            del classification_head_kwargs['n_classes']
+        if 'input_channels' in constructor_args:
+            classification_head_kwargs['input_channels'] = input_channels
+        if 'input_length' in constructor_args:
+            classification_head_kwargs['input_length'] = input_length

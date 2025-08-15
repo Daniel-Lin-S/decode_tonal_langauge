@@ -86,3 +86,37 @@ def load_state_dict(
                 model.__class__.__name__, ignore_missing_keys))
         if len(error_msgs) > 0:
             print('\n'.join(error_msgs))
+
+
+def get_activation(activation: str, **kwargs) -> nn.Module:
+    """
+    Get the activation function based on the provided name.
+
+    Parameters
+    ----------
+    activation : str
+        Name of the activation function.
+    **kwargs
+        Additional keyword arguments to
+        pass to the activation function.
+
+    Returns
+    -------
+    nn.Module
+        The corresponding activation function module.
+    """
+    if activation == 'ELU':
+        return nn.ELU(**kwargs)
+    elif activation == 'ReLU':
+        return nn.ReLU(**kwargs)
+    elif activation == 'LeakyReLU':
+        return nn.LeakyReLU(**kwargs)
+    elif activation == 'PReLU':
+        return nn.PReLU(**kwargs)
+    elif activation == 'GLU':
+        return nn.GLU(**kwargs)
+    elif activation == 'GELU':
+        return nn.GELU(**kwargs)
+    else:
+        raise ValueError(
+            f"Unsupported activation function: {activation}")

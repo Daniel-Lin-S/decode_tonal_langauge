@@ -13,7 +13,7 @@ preprocess:
           - Sub2/tdt
         subject_ids: [1, 2]
     io:
-      module: data_loading.io_tdt
+      module: preprocess.io.tdt_blocks
       params:
         root_dir: data/raw
         output_dir: data/processed

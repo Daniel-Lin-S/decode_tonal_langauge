@@ -3,6 +3,7 @@ import torch.nn as nn
 from scipy.signal import resample
 from torch.nn.init import trunc_normal_
 from typing import Optional, Sequence, Union
+from inspect import signature
 
 from .foundation import LaBraM
 from .classifier import ClassifierModel
@@ -19,8 +20,11 @@ class LaBraMClassifier(ClassifierModel):
             backbone_kwargs: dict = {},
             use_pretrained_weights: bool = True,
             pretrained_weights_path: Optional[str] = None,
+            freeze_backbone: bool = False,
             init_scale: float=0.001,
-            device: str = 'cpu'
+            device: str = 'cpu',
+            classification_head: str=None,
+            classification_head_kwargs: dict = {}
         ):
         """
         Parameters
@@ -49,11 +53,26 @@ class LaBraMClassifier(ClassifierModel):
         pretrained_weights_path : str, optional
             Path to the pretrained weights file, by default None.
             If a URL starting with "https" is provided, it will be downloaded.
+        freeze_backbone : bool, optional
+            Whether to freeze the backbone weights, by default False.
+            If True, the backbone weights will not be updated during training.
         init_scale : float, optional
             Scale for the initial weights of the classifier head, by default 0.001.
+        device: str, optional
+            Device to load the pretrained weights onto, by default 'cpu'.
+        classification_head : str, optional
+            The full path to a custom classification head class,
+            if not given, a default linear layer will be used.
+        classification_head_kwargs : dict, optional
+            Additional keyword arguments for the classification head,
+            by default {}.
         """
         super(LaBraMClassifier, self).__init__(n_classes)
         self.backbone = LaBraM(EEG_size=input_length, **backbone_kwargs)
+
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
         if use_pretrained_weights:
             self._load_backbone(pretrained_weights_path, device)
@@ -61,10 +80,25 @@ class LaBraMClassifier(ClassifierModel):
         self.input_sampling_rate = input_sampling_rate
         self.patch_size = backbone_kwargs.get('patch_size', 200)
 
-        self.classifier_head = nn.Linear(
-            self.backbone.embed_dim,
-            n_classes
-        )
+        if classification_head:
+            module_path, class_name = classification_head.rsplit('.', 1)
+            head_module = __import__(module_path, fromlist=[class_name])
+            head_class = getattr(head_module, class_name)
+
+            constructor_args = signature(head_class.__init__).parameters
+            self._initialise_classification_head_kwargs(
+                classification_head_kwargs, constructor_args
+            )
+
+            self.classifier_head = head_class(
+                n_classes=n_classes,
+                **classification_head_kwargs
+            )
+        else:
+            self.classifier_head = nn.Linear(
+                self.backbone.embed_dim,
+                n_classes
+            )
 
         if input_channel_names is not None:
             if isinstance(input_channel_names[0], str):
@@ -115,6 +149,14 @@ class LaBraMClassifier(ClassifierModel):
         logits = self.classifier_head(features)
 
         return logits
+
+    def _initialise_classification_head_kwargs(
+            self, classification_head_kwargs, constructor_args
+        ):
+        if 'input_dim' in constructor_args:
+            classification_head_kwargs['input_dim'] = self.backbone.embed_dim
+        if 'n_classes' in constructor_args:
+            del classification_head_kwargs['n_classes']
 
     def _load_backbone(self, pretrained_weights_path: str, device: str):
         if not pretrained_weights_path:

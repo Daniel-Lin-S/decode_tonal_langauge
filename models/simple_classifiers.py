@@ -3,6 +3,7 @@ import torch
 from typing import Optional
 
 from .classifier import ClassifierModel
+from .utils import get_activation
 
 
 class LogisticRegressionClassifier(ClassifierModel):
@@ -79,6 +80,7 @@ class ShallowNNClassifier(ClassifierModel):
             self, input_dim: int,
             n_classes: int,
             hidden_dim: Optional[int]=None,
+            activation: str='ReLU'
         ) -> None:
         """
         Parameters
@@ -100,7 +102,7 @@ class ShallowNNClassifier(ClassifierModel):
 
         self.hidden = nn.Linear(input_dim, hidden_dim)
         self.output = nn.Linear(hidden_dim, n_classes)
-        self.activation = nn.ReLU()
+        self.activation = get_activation(activation)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

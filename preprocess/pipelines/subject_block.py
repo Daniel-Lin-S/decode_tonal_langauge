@@ -1,3 +1,9 @@
+"""
+Expected input directory structure:
+root_dir/
+    HS<subject_id>-<block_id>/
+"""
+
 import os
 import yaml
 import hashlib
@@ -41,6 +47,7 @@ def generate_setup_name(modalities_cfg: Dict[str, Any]) -> str:
     readable_name = "__".join(readable_parts) if readable_parts else "raw"
     setup_str = "_".join([f"{step['module']}_{step.get('params', {})}" for step in steps])
     hash_part = hashlib.md5(setup_str.encode()).hexdigest()[:6]
+
     return f"{readable_name}_{hash_part}" if readable_parts else readable_name
 
 
@@ -54,11 +61,12 @@ def run(pipeline_params, io_params, io_module, preprocessor_module, modalities_c
 
     config_path = os.path.join(setup_dir, "config.yaml")
     with open(config_path, "w") as f:
-        yaml.dump(
-            {
+        yaml.dump({
+            "preprocess": {
                 "pipeline": vars(pipeline_params),
                 "io": vars(io_params),
                 "modalities": modalities_cfg,
+                }
             },
             f,
         )
