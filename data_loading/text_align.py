@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from textgrid import TextGrid
 import os
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Sequence
 
 import warnings
 
@@ -189,10 +189,10 @@ def get_textgrid_time(
 def extract_ecog_audio(
         intervals: Dict[int, pd.DataFrame],
         recording_dir: str,
-        syllables: List[str],
+        syllables: Optional[List[str]] = None,
         length: float = 1.0,
         output_path: Optional[str]=None,
-        rest_period: Optional[Tuple[float]] = None,
+        rest_period: Optional[Sequence[float]] = None,
         recording_format: str = 'npz'
     ) -> Dict[str, np.ndarray]:
     """
@@ -212,19 +212,20 @@ def extract_ecog_audio(
         The name of each file must start with "B[block_number]".
         Required keys: `data` for the recording,
         `sf` for sampling frequency.
-    syllables : List[str]
+    syllables : List[str], optional
         List of syllables to map to the intervals.
         Syllable at index i will be encoded as i in the output.
+        If not provided, syllable labels will be inferred from the intervals.
     length : float, optional
         Length of the samples to extract, in seconds.
         Defaults to 1.0.
     output_path : str, optional
         Path to save the extracted samples (in .npz forms)
-    rest_period : Tuple[float], optional
-        Tuple of (start, end) in seconds for the rest period.
-        Extracted for reference. 
+    rest_period : Sequence[float], optional
+        (start, end) in seconds for the rest period.
+        Extracted for reference.
         If not given, rest samples will not be extracted.
-    
+
     Returns
     -------
     Dict[str, np.ndarray]
@@ -240,12 +241,19 @@ def extract_ecog_audio(
     """
     erp_samples = {}   # event related potentials of ECoG
     if rest_period is not None:
+        rest_period = tuple(rest_period)
         ecog_rest_samples = {}
     audio_samples = {}
     syllable_labels = {}
     tone_labels = {}
 
-    print('Syllable mapping used: ', dict(enumerate(syllables)))
+    if syllables is None:
+        syllables = sorted({
+            s for df in intervals.values() for s in df.get('syllable', [])
+        })
+
+    if syllables:
+        print('Syllable mapping used: ', dict(enumerate(syllables)))
 
     for file in os.listdir(recording_dir):
         if match_filename(file, recording_format, ['ecog']):

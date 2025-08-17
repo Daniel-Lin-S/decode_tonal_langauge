@@ -1,15 +1,18 @@
-"""
-Align ECoG and audio samples using TextGrid annotations.
-Configuration is provided via YAML.
+"""Extract aligned ECoG and audio samples.
+
+The extraction process is configurable so that datasets with different
+annotation formats can plug in custom interval and sample extraction
+modules. By default the pipeline uses TextGrid annotations via
+``data_loading.text_align``.
 """
 
 import os
 import yaml
 import hashlib
+import importlib
 import numpy as np
 import matplotlib.pyplot as plt
 
-from data_loading.text_align import handle_textgrids, extract_ecog_audio
 from utils.config import dict_to_namespace, update_configuration
 
 
@@ -22,6 +25,23 @@ def run(config: dict) -> str:
     for section in ("io", "settings"):
         params_dict.update(params_config.get(section, {}))
     params = dict_to_namespace(params_dict)
+
+    module_cfg = params_config.get("modules", {})
+
+    interval_cfg = module_cfg.get(
+        "interval_extractor",
+        {"module": "data_loading.text_align", "function": "handle_textgrids"},
+    )
+    sample_cfg = module_cfg.get(
+        "sample_extractor",
+        {"module": "data_loading.text_align", "function": "extract_ecog_audio"},
+    )
+
+    interval_module = importlib.import_module(interval_cfg["module"])
+    interval_extractor = getattr(interval_module, interval_cfg.get("function", "handle_textgrids"))
+
+    sample_module = importlib.import_module(sample_cfg["module"])
+    sample_extractor = getattr(sample_module, sample_cfg.get("function", "extract_ecog_audio"))
 
     if not hasattr(params, "overwrite"):
         params.overwrite = False
@@ -44,7 +64,7 @@ def run(config: dict) -> str:
         new_module_cfg=collection_cfg
     )
 
-    for subject_id, subject_params in params_config.get("subjects", {}).items():
+    for subject_id, subject_cfg in params_config.get("subjects", {}).items():
         subject_path = os.path.join(params.recording_dir, f"subject_{subject_id}")
         if not os.path.exists(subject_path):
             print(
@@ -59,33 +79,36 @@ def run(config: dict) -> str:
             print(f"Output file {subject_output_path} already exists. Skipping ...")
             continue
 
-        textgrid_dir = os.path.join(params.textgrid_root, subject_params["textgrid_dir"])
+        interval_subject_cfg = subject_cfg.get("interval_extractor", {}).copy()
+
+        data_dir = interval_subject_cfg.pop("data_dir", None)
+        if data_dir is None:
+            data_dir = interval_subject_cfg.pop("textgrid_dir", None)
+        if data_dir is None:
+            print(f"No interval data directory specified for subject {subject_id}. Skipping...")
+            continue
+
+        textgrid_dir = os.path.join(params.textgrid_root, data_dir)
         if not os.path.exists(textgrid_dir):
             print(f"TextGrid directory {textgrid_dir} not found. Skipping...")
             continue
 
         print(
             '------------------------ \n'
-            f'Extracting all samples from {subject_path} using textgrids from {textgrid_dir}'
+            f'Extracting all samples from {subject_path} using annotations from {textgrid_dir}'
             '\n ------------------------'
         )
 
-        intervals = handle_textgrids(
-            textgrid_dir,
-            start_offset=subject_params.get("start_offset", 0.0),
-            tier_list=subject_params.get("tier_list", None),
-            blocks=subject_params.get("blocks", None),
-        )
+        intervals = interval_extractor(textgrid_dir, **interval_subject_cfg)
 
         if len(intervals) == 0:
             raise ValueError(
-                "No intervals found in the TextGrid files. "
+                "No intervals found in the annotation files. "
                 "Check the directory and file naming conventions."
-                f"Target blocks: {params.blocks if params.blocks else 'all'}"
             )
 
         print(
-            "Extracted intervals from TextGrid files: "
+            "Extracted intervals from annotation files: "
             f"{len(intervals)} blocks found."
         )
 
@@ -111,14 +134,19 @@ def run(config: dict) -> str:
                             subject_id, block_id, fig_dir
                         )
 
-        extract_ecog_audio(
-            intervals,
-            subject_path,
-            syllables=params.syllable_identifiers,
-            length=subject_params["sample_length"],
-            output_path=subject_output_path,
-            rest_period=tuple(subject_params["rest_period"]),
-        )
+        sample_subject_cfg = subject_cfg.get("sample_extractor", {}).copy()
+
+        sample_kwargs = {
+            "intervals": intervals,
+            "recording_dir": subject_path,
+            "output_path": subject_output_path,
+        }
+        if hasattr(params, "syllable_identifiers"):
+            sample_kwargs.setdefault("syllables", params.syllable_identifiers)
+
+        sample_kwargs.update(sample_subject_cfg)
+
+        sample_extractor(**sample_kwargs)
 
     return output_dir
 

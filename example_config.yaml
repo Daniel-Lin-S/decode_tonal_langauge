@@ -49,22 +49,34 @@ preprocess:
 sample_collection:
   module: extract_samples
   params:
+    modules:
+      interval_extractor:
+        module: data_loading.text_align
+        function: handle_textgrids
+      sample_extractor:
+        module: data_loading.text_align
+        function: extract_ecog_audio
     io:
+      recording_dir: data/processed                                 # Root of processed recordings
       output_dir: data/samples                                    # Output path for samples
       textgrid_root: data                                         # Root directory for textgrid files
     subjects:
       1:
-        start_offset: 0.2                               # Offset (in seconds) to extract before the event
-        tier_list: ['success']                          # tiers in the text grid file to extract
-        blocks: [1, 2, 3]                               # blocks to extract
-        textgrid_dir: subject_1/annotations
-        rest_period: [0., 3.]                           # extract rest period for future processes
-        sample_length: 1.0                              # Length of each sample in seconds
+        interval_extractor:
+          data_dir: subject_1/annotations
+          start_offset: 0.2                               # Offset (in seconds) to extract before the event
+          tier_list: ['success']                          # tiers in the text grid file to extract
+          blocks: [1, 2, 3]                               # blocks to extract
+        sample_extractor:
+          length: 1.0                                    # Length of each sample in seconds
+          rest_period: [0., 3.]                           # extract rest period for future processes
       2:
-        start_offset: 0.1
-        sample_length: 1.0
-        rest_period: [0., 5.]
-        textgrid_dir: subject_2/annotations
+        interval_extractor:
+          data_dir: subject_2/annotations
+          start_offset: 0.1
+        sample_extractor:
+          length: 1.0
+          rest_period: [0., 5.]
     settings:
       syllable_identifiers: [i, a]       # Identifiers for syllables in textgrid files.
 
