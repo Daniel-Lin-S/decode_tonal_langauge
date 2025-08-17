@@ -1,13 +1,13 @@
 """
 Expected input directory structure:
 root_dir/
-    HS<subject_id>-<block_id>/
+    HS<subject_id>-B<block_id>/
 """
 
 import os
 import yaml
 import hashlib
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Sequence
 
 from utils.config import dict_to_namespace
 
@@ -19,12 +19,15 @@ def get_block_id(dirname: str) -> int:
     except ValueError:
         print(
             f"Skipping directory '{dirname}' as it does not match expected format.",
-            "Expected format: 'HS<subject_id>-<block_id>'.",
+            "Expected format: 'HS<subject_id>-B<block_id>'.",
         )
         return None
 
 
-def iter_blocks(root_dir: str, subject_dirs, subject_ids=None):
+def iter_blocks(
+        root_dir: str, subject_dirs: List[str],
+        subject_ids: Optional[Sequence]=None
+    ):
     """Yield (subject_id, block_id, block_path) tuples."""
     if subject_ids is None:
         subject_ids = [i + 1 for i in range(len(subject_dirs))]
@@ -78,7 +81,7 @@ def run(pipeline_params, io_params, io_module, preprocessor_module, modalities_c
     ):
         print(f"Processing block {block_id} of subject {subject_id}...")
 
-        data_dict = io_module.load_block(block_path)
+        data_dict = io_module.load_block(block_path, io_params)
 
         block_params = dict_to_namespace(
             {
@@ -98,6 +101,6 @@ def run(pipeline_params, io_params, io_module, preprocessor_module, modalities_c
             data_dict, modalities_cfg, block_params, figure_dir=block_figure_dir
         )
 
-        io_module.save_block(setup_dir, subject_id, block_id, data_dict)
+        io_module.save_block(setup_dir, subject_id, block_id, data_dict, io_params)
 
     return setup_dir
