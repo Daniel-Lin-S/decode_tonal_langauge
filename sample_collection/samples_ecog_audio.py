@@ -1,230 +1,59 @@
+"""
+Extracts ECoG and audio samples by aligning with intervals.
+"""
+
 import pandas as pd
 import numpy as np
-from textgrid import TextGrid
 import os
-from typing import List, Optional, Dict, Tuple, Sequence
-
+from typing import List, Optional, Dict, Sequence
 import warnings
+from argparse import Namespace
+import matplotlib.pyplot as plt
 
 from .utils import extract_block_id, match_filename
 
 
-def handle_textgrids(
-        data_dir: str,
-        start_offset: float = 0.0,
-        end_offset: float = 0.0,
-        tier_list: Optional[List[str]]=None,
-        blocks: Optional[List[int]]=None,
-    ) -> Dict[int, pd.DataFrame]:
-    """
-    Extracts information from TextGrid files in the specified directory.
-    Each TextGrid file must have a naming convention that includes
-    a block number at the end,
-    e.g. 'example_TextGrid_B1.TextGrid'.
-    Each block will only be loaded once.
-
-    Parameters
-    ----------
-    data_dir : str
-        Directory containing TextGrid files.
-    start_offset : float, optional
-        Offset to subtract from the start time of each interval.
-        Defaults to 0.0.
-    end_offset : float, optional
-        Offset to add to the end time of each interval.
-        Defaults to 0.0.
-    tier_list : List[str], optional
-        List of tier names to extract from the TextGrid files.
-        If None, all tiers will be considered.
-    blocks : List[int], optional
-        List of block numbers to process.
-        If None, all blocks will be processed.
-    
-    Returns
-    -------
-    Dict[int, pd.DataFrame]
-        A dictionary where keys are block numbers and
-        values are lists of dictionaries containing the information
-        extracted from each TextGrid file. \n
-        Each dictionary in the list has the following structure:
-        - start : float, start time of the interval (in seconds)
-        - end : float, end time of the interval (in seconds)
-        - syllable : str, syllable associated with the interval
-        - tone : int, tone associated with the interval
-    """
-
-    intervals = {}
-
-    for file in os.listdir(data_dir):
-        if file.endswith('.TextGrid'):
-            block_number = extract_block_id(file)
-            
-            if blocks is not None and block_number not in blocks:
-                continue
-
-            if block_number not in intervals:
-                file_path = os.path.join(data_dir, file)
-                tg = TextGrid.fromFile(file_path)
-
-                block_data = read_textgrid(
-                    tg, start_offset, end_offset, tier_list
-                )
-
-                total_len = get_textgrid_time(tg, tier_list)
-                print(
-                    f'Maximum time for block {block_number}:',
-                    total_len, ' s')
-
-                intervals[block_number] = block_data
-
-    return intervals
-
-
-def read_textgrid(
-        tg : TextGrid,
-        start_offset: float, end_offset: float,
-        tier_list: Optional[List[str]]=None
-    ) -> pd.DataFrame:
-    """
-    Find the intervals with marks starting with a digit
-    (indicates true reading times) and extract them into a DataFrame.
-
-    Parameters
-    ----------
-    tg : TextGrid
-        TextGrid object containing the intervals.
-    start_offset : float
-        Offset to subtract from the start time of each interval,
-        in seconds
-    end_offset : float
-        Offset to add to the end time of each interval,
-        in seconds
-    tier_list : List[str], optional
-        List of tier names to extract from the TextGrid.
-        If None, all tiers will be considered.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing the extracted intervals.
-        Each row represents an interval with the following columns:
-        - start : float, start time of the interval (in seconds)
-        - end : float, end time of the interval (in seconds)
-        - syllable : str, syllable associated with the interval
-        - tone : int, tone associated with the interval
-    """
-    trial_list = []
-
-    tier_names = [tier.name for tier in tg.tiers]
-    if tier_list is None:
-        tier_list = tier_names
-
-    for tier in tg.tiers:
-        if tier.name.lower() in tier_list:
-            for interval in tier.intervals:
-                if len(interval.mark) == 0:
-                    continue
-
-                if interval.mark[0].isdigit():
-                    tone = int(interval.mark[0])
-                    syllable = interval.mark[1]
-
-                    start = interval.minTime - start_offset
-                    end = interval.maxTime + end_offset
-
-                    if trial_list and start < trial_list[-1]['end']:
-                        warnings.warn(
-                            f"Overlapping intervals detected in tier '{tier.name}' "
-                            f"at time {interval.minTime:.2f} for syllable '{syllable}', "
-                            f"previous end time was {trial_list[-1]['end']:.2f}. "
-                            "Skipping this interval ... "
-                        )
-                        continue
-
-                    trial_list.append({
-                        'start' : np.around(start, decimals=1),
-                        'end' : np.around(end, decimals=1),
-                        'syllable' : syllable,
-                        'tone' : tone
-                    })
-    
-    return pd.DataFrame(trial_list)
-
-
-def get_textgrid_time(
-        tg: TextGrid,
-        tier_list: Optional[List[str]]=None
-    ) -> float:
-    """
-    Calculates the total temporal length of the TextGrid file
-    based on the specified tiers.
-
-    Parameters
-    ----------
-    tg : TextGrid
-        TextGrid object containing the intervals.
-    tier_list : List[str], optional
-        List of tier names to consider for length calculation.
-        If None, all tiers will be considered.
-
-    Returns
-    -------
-    float
-        The maximum end time of the intervals in the specified tiers.
-    """
-    if tier_list is None:
-        tier_list = [tier.name.lower() for tier in tg.tiers]
-
-    max_time = 0.0
-
-    for tier in tg.tiers:
-        if tier.name.lower() in tier_list:
-            for interval in tier.intervals:
-                if interval.maxTime > max_time:
-                    max_time = interval.maxTime
-
-    return max_time
-
-
-def extract_ecog_audio(
+def get_samples(
         intervals: Dict[int, pd.DataFrame],
-        recording_dir: str,
-        syllables: Optional[List[str]] = None,
-        length: float = 1.0,
-        output_path: Optional[str]=None,
-        rest_period: Optional[Sequence[float]] = None,
-        recording_format: str = 'npz'
+        params: Namespace
     ) -> Dict[str, np.ndarray]:
     """
-    Extracts ECoG and audio samples based on the intervals
-    extracted from TextGrid files.
+    Extracts ECoG and audio samples based on the intervals.
 
     Parameters
     ----------
-    intervals : Dict[int, pd.DataFrame]
-        Dictionary where keys are block numbers and
-        values are DataFrames containing the intervals.
-        Should be output of `handle_textgrids`.
-    recording_dir : str
+    intervals: Dict[int, pd.DataFrame]
+        A dictionary where keys are block numbers and
+        values are DataFrames containing the extracted intervals
+        with columns:
+        - start : float, start time of the interval (in seconds)
+        - end : float, end time of the interval (in seconds)
+        - syllable : str, syllable associated with the interval
+        - tone : int, tone associated with the interval
+    data_dir : str
         Directory containing ECoG and audio files. (.npz forms)
         Should have ECoG files with "3052Hz" in the name and
         audio files with "sound" in the name.
         The name of each file must start with "B[block_number]".
         Required keys: `data` for the recording,
         `sf` for sampling frequency.
-    syllables : List[str], optional
-        List of syllables to map to the intervals.
-        Syllable at index i will be encoded as i in the output.
-        If not provided, syllable labels will be inferred from the intervals.
-    length : float, optional
-        Length of the samples to extract, in seconds.
-        Defaults to 1.0.
     output_path : str, optional
         Path to save the extracted samples (in .npz forms)
-    rest_period : Sequence[float], optional
-        (start, end) in seconds for the rest period.
-        Extracted for reference.
-        If not given, rest samples will not be extracted.
+        If None, samples will not be saved.
+    params : Namespace 
+        Parameters for the extraction process.
+        Should contain:
+        - sample_length : float, length of each sample in seconds
+        - recording_format : str, format of the recording files,
+          e.g. '.npz'
+        - syllable_identifiers : List[str], optional
+            List of syllable identifiers to use for labeling.
+            If None, all syllables found in the intervals will be used,
+            and a default number mapping is given.
+        - rest_period : Sequence[float], optional
+            Rest period to extract ECoG rest samples.
+            Should be a tuple of two floats (start, end) in seconds.
+            If None, no rest samples will be extracted.
 
     Returns
     -------
@@ -239,7 +68,18 @@ def extract_ecog_audio(
         - 'ecog_rest': ECoG rest samples (if rest_period is given),
            shape (n_rest_samples, n_channels, sample_length)
     """
-    erp_samples = {}   # event related potentials of ECoG
+    length = getattr(params, 'sample_length', 1.0)
+    recording_format = getattr(params, 'recording_format', '.npz')
+    syllables: List[str] = getattr(params, 'syllable_identifiers', None)
+    rest_period: Sequence[float] = getattr(params, 'rest_period', None)
+
+    generate_figures(
+        intervals, params.data_dir,
+        figure_dir=os.path.join(os.path.dirname(params.output_path), 'figures'),
+        subject_id=params.subject_id
+    )
+
+    erp_samples = {}
     if rest_period is not None:
         rest_period = tuple(rest_period)
         ecog_rest_samples = {}
@@ -252,14 +92,24 @@ def extract_ecog_audio(
             s for df in intervals.values() for s in df.get('syllable', [])
         })
 
-    if syllables:
-        print('Syllable mapping used: ', dict(enumerate(syllables)))
+    print('Syllable mapping used: ', dict(enumerate(syllables)))
 
-    for file in os.listdir(recording_dir):
+    for file in os.listdir(params.data_dir):
         if match_filename(file, recording_format, ['ecog']):
             block = extract_block_id(file)
+
             if block not in intervals:
                 continue
+
+            if 'start' not in intervals[block].columns or \
+                'end' not in intervals[block].columns or \
+                'syllable' not in intervals[block].columns or \
+                'tone' not in intervals[block].columns:
+                raise ValueError(
+                    f"Intervals for block {block} do not contain all required columns: "
+                    "'start', 'end', 'syllable', 'tone'. "
+                    f"Available columns: {list(intervals[block].columns)}."
+                )
 
             if block in erp_samples:
                 warnings.warn(
@@ -268,7 +118,7 @@ def extract_ecog_audio(
                 )
                 continue
 
-            file_path = os.path.join(recording_dir, file)
+            file_path = os.path.join(params.data_dir, file)
 
             dataset = np.load(file_path)
             try:
@@ -347,8 +197,9 @@ def extract_ecog_audio(
                 ecog_rest_samples[block] = np.array(
                     ecog_rest_samples[block])
 
-        elif match_filename(file, recording_format, ['sound']):  # Audio Recording
+        elif match_filename(file, recording_format, ['audio']):  # Audio Recording
             block = extract_block_id(file)
+
             if block not in intervals:
                 continue
 
@@ -359,7 +210,7 @@ def extract_ecog_audio(
                 )
                 continue
 
-            file_path = os.path.join(recording_dir, file)
+            file_path = os.path.join(params.data_dir, file)
 
             dataset = np.load(file_path)
             try:
@@ -401,20 +252,22 @@ def extract_ecog_audio(
 
             audio_samples[block] = np.array(audio_samples[block])   # (n_samples, sample_length)
         
-    block_ids = audio_samples.keys()
+    audio_block_ids = audio_samples.keys()
+    ecog_block_ids = erp_samples.keys()
 
-    if erp_samples.keys() != block_ids:
+    if audio_block_ids != ecog_block_ids:
         raise ValueError(
             "Mismatch between ECoG and audio samples blocks. "
             "Ensure both ECoG and audio files are present for each block."
-            f" ECoG blocks found: {erp_samples.keys()},"
-            f" Audio blocks found: {block_ids}."
+            f" ECoG blocks found: {ecog_block_ids},"
+            f" Audio blocks found: {audio_block_ids}."
         )
 
-    if len(block_ids) == 0:
+    if len(audio_block_ids) == 0 or len(ecog_block_ids) == 0:
         raise ValueError(
-            "No valid blocks found in the specified directories."
-            f"Blocks in textgrids: {list(intervals.keys())}. "
+            "No ECoG or audio samples found. "
+            f"Blocks in intervals: {intervals.keys()}. "
+            f"Files in the directory: {os.listdir(params.data_dir)}"
         )
 
     # merge blocks
@@ -423,7 +276,7 @@ def extract_ecog_audio(
     all_syllable_labels = []
     all_tone_labels = []
 
-    for block in block_ids:
+    for block in ecog_block_ids:
         all_erp_samples.append(erp_samples[block])
         all_audio_samples.append(audio_samples[block])
         all_syllable_labels.append(syllable_labels[block])
@@ -440,15 +293,15 @@ def extract_ecog_audio(
 
     if rest_period is not None:
         all_ecog_samples_rest = []
-        for block in block_ids:
+        for block in ecog_block_ids:
             all_ecog_samples_rest.append(ecog_rest_samples[block])
         all_ecog_samples_rest = np.concatenate(all_ecog_samples_rest, axis=0)
         print('ECoG rest samples shape:', all_ecog_samples_rest.shape)
 
     print('ECoG ERP samples shape:', all_erp_samples.shape)
     print('Audio samples shape:', all_audio_samples.shape)
-    print('Syllable labels shape:', all_syllable_labels.shape)
-    print('Tone labels shape:', all_tone_labels.shape)
+    print('Syllable labels collected:', np.unique(all_syllable_labels))
+    print('Tone labels collected:', np.unique(all_tone_labels))
 
     # save as npz file
     output_data = {
@@ -463,8 +316,143 @@ def extract_ecog_audio(
     if rest_period is not None:
         output_data['ecog_rest'] = all_ecog_samples_rest
 
-    if output_path is not None:
-        np.savez(output_path, **output_data)
-        print(f"ECoG and audio samples saved to {output_path}")
+    if params.output_path is not None:
+        np.savez(params.output_path, **output_data)
+        print(f"ECoG and audio samples saved to {params.output_path}")
 
     return output_data
+
+
+def generate_figures(
+        intervals: Dict[int, pd.DataFrame],
+        data_dir: str,
+        figure_dir: str,
+        subject_id: str
+    ):
+    if len(intervals) == 0:
+        warnings.warn(
+            'No intervals found in the annotation files. '
+            'Will not be able to generate figures.'
+        )
+        return
+            
+    for block_id, block_df in intervals.items():
+        if not block_df.empty:
+            events = block_df.to_dict('records')
+            sampled_events = _sample_consecutive_events(events, num_events=3)
+
+            data_path = os.path.join(data_dir, f"B{block_id}_ecog.npz")
+
+            if os.path.exists(data_path):
+                ecog = np.load(data_path)
+                signal = ecog['data']
+                sf = int(ecog['sf'])
+                channels = np.random.choice(
+                    signal.shape[0], size=5, replace=False)
+                subject_fig_dir = os.path.join(figure_dir, f'subject_{subject_id}')
+                os.makedirs(subject_fig_dir, exist_ok=True)
+
+                plot_ecog_events(
+                    signal, sf, sampled_events, channels,
+                    subject_id, block_id, subject_fig_dir
+                )
+            else:
+                warnings.warn(
+                    f"ECoG data for block {block_id} not found at {data_path}. "
+                    "Skipping figure generation for this block."
+                    f"Files available: {os.listdir(data_dir)}"
+                )
+
+
+def _sample_consecutive_events(events, num_events):
+    events = sorted(events, key=lambda x: x['start'])
+
+    if len(events) > num_events:
+        start_idx = np.random.randint(0, len(events) - num_events + 1)
+        return events[start_idx:start_idx + num_events]
+    else:
+        return events
+
+def plot_ecog_events(
+    signal: np.ndarray,
+    sf: int,
+    events: list,
+    channels: list,
+    subject_id: str,
+    block_id: str,
+    fig_dir: str
+) -> None:
+    """
+    Plot ECoG signal for multiple channels, with each channel occupying a subplot.
+    Highlight events and include inter-event signals.
+
+    Args:
+        signal (np.ndarray): ECoG signal (channels x timepoints).
+        sf (int): Sampling frequency of the signal.
+        events (list): List of event intervals, each as a dict with 'start' and 'end'.
+        channels (list): List of channel indices to plot.
+        subject_id (str): Subject ID for labeling.
+        block_id (str): Block ID for labeling.
+        fig_dir (str): Directory to save the figure.
+    """
+    os.makedirs(fig_dir, exist_ok=True)
+
+    start_time = max(min(event['start'] for event in events) - 0.5, 0)
+    end_time = max(event['end'] for event in events) + 0.5
+    start_idx = int(start_time * sf)
+    end_idx = int(end_time * sf)
+    time = np.arange(start_idx, end_idx) / sf
+
+    fig, axes = plt.subplots(len(channels), 1, figsize=(12, 4 * len(channels)), sharex=True)
+    if len(channels) == 1:
+        axes = [axes]
+
+    for ax, ch_idx in zip(axes, channels):
+        ax.plot(
+            time,
+            signal[ch_idx, start_idx:end_idx],
+            label=f'Offset',
+            color='blue',
+            alpha=0.7
+        )
+
+        for i, event in enumerate(events):
+            event_start_idx = int(event['start'] * sf)
+            event_end_idx = int(event['end'] * sf)
+            event_time = np.arange(event_start_idx, event_end_idx) / sf
+
+            ax.plot(
+                event_time,
+                signal[ch_idx, event_start_idx:event_end_idx],
+                label=f'Onset' if i == 0 else None,
+                color='orange'
+            )
+            ax.axvline(
+                event['start'], color='g',
+                linestyle='--', alpha=0.7,
+                label='Event Start' if i == 0 else None
+            )
+            ax.axvline(
+                event['end'], color='r',
+                linestyle='--', alpha=0.7,
+                label='Event End' if i == 0 else None
+            )
+
+        ax.set_title(f'Channel {ch_idx}', fontsize=18)
+        ax.set_ylabel('Amplitude', fontsize=16)
+
+        ax.legend(
+            fontsize=14, loc='upper right',
+            bbox_to_anchor=(1.2, 1),
+            borderaxespad=0.
+        )
+
+    axes[-1].set_xlabel('Time (s)', fontsize=16)
+    fig.suptitle(f'Subject {subject_id} Block {block_id}', fontsize=20)
+    fig.tight_layout()
+
+    fig.subplots_adjust(top=0.93)
+
+    fig_path = os.path.join(fig_dir, f'block_{block_id}_events.png')
+    fig.savefig(fig_path, dpi=300)
+    plt.close(fig)

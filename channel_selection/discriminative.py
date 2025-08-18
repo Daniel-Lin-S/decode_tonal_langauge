@@ -20,6 +20,12 @@ def run(data: dict, params: dict) -> dict:
     Args:
         data (dict): The loaded data from the `.npz` file.
         params (dict): Configuration parameters for discriminative channel selection.
+            required parameters:
+            - `target`: float, The target label to analyze.
+            - `p_threshold`: float, The p-value threshold for significance.
+            - `active_time_threshold`: float, The minimum length of significant activity in seconds.
+            - `recording_name` (optional): str, The name of the recording to analyze (default is 'ecog').
+            - `onset_time` (optional): int, The time of event onset in seconds (default is None).
 
     Returns:
         dict: A dictionary containing:
@@ -83,7 +89,7 @@ def generate_figures(
             label_name=label_name,
             p_threshold=params.get('p_threshold', 0.05),
             recording_name=params['recording_name'],
-            onset_time=getattr(params, 'onset_time', None),
+            onset_time=params.get('onset_time', None),
             figure_path=fig_path,
         )
 
@@ -252,24 +258,23 @@ def plot_discriminative_channel(
 
     axes[0].set_xlabel('Time (s)')
     axes[0].set_ylabel('Amplitude')
-    axes[0].legend()
+    axes[0].legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize='small')
 
-    # Second plot: P-values
     axes[1].plot(timepoints, p_vals, label='P-values', color='r')
     axes[1].axhline(y=p_threshold, color='k', linestyle='--',
                     label='Significance Threshold')
     axes[1].set_xlabel('Time (s)')
     axes[1].set_ylabel('p-value')
-    axes[1].legend()
+    axes[1].legend(loc='upper right', fontsize='small', bbox_to_anchor=(1.05, 1))
 
-    # set super title 
     plt.suptitle(
         f'Discriminative Power for Channel {channel_idx} '
         f'in distinguishing {label_name}', fontsize=18)
 
-    # Save or show the figure
+    plt.tight_layout(rect=[0, 0, 0.85, 1])
+
     if figure_path:
-        plt.savefig(figure_path, dpi=500)
+        plt.savefig(figure_path, dpi=500, bbox_inches='tight')
         plt.close()
     else:
         plt.show()

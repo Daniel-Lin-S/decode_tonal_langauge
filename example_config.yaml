@@ -51,40 +51,38 @@ sample_collection:
   params:
     modules:
       interval_extractor:
-        module: data_loading.text_align
-        function: handle_textgrids
+        module: sample_collection.intervals_from_textgrids
+        function: get_intervals
       sample_extractor:
-        module: data_loading.text_align
-        function: extract_ecog_audio
+        module: sample_collection.samples_ecog_audio
+        function: get_samples
     io:
-      recording_dir: data/processed                                 # Root of processed recordings
-      output_dir: data/samples                                    # Output path for samples
-      textgrid_root: data                                         # Root directory for textgrid files
+      recording_dir: data/processed                         # Root of processed recordings
+      output_dir: data/samples                              # Output path for samples
     subjects:
       1:
         interval_extractor:
-          data_dir: subject_1/annotations
-          start_offset: 0.2                               # Offset (in seconds) to extract before the event
-          tier_list: ['success']                          # tiers in the text grid file to extract
-          blocks: [1, 2, 3]                               # blocks to extract
+          params:
+            textgrid_dir: subject_1/annotations
+            start_offset: 0.2                               # Offset (in seconds) to extract before the event
+            tier_list: ['success']                          # tiers in the text grid file to extract
+            blocks: [1, 2, 3]                               # blocks to extract
         sample_extractor:
-          length: 1.0                                    # Length of each sample in seconds
-          rest_period: [0., 3.]                           # extract rest period for future processes
+          params:
+            sample_length: 1.0                              # Length of each sample in seconds
       2:
         interval_extractor:
-          data_dir: subject_2/annotations
-          start_offset: 0.1
+          params:
+            textgrid_dir: subject_2/annotations
+            start_offset: 0.1
         sample_extractor:
-          length: 1.0
-          rest_period: [0., 5.]
-    settings:
-      syllable_identifiers: [i, a]       # Identifiers for syllables in textgrid files.
+          params:
+            sample_length: 1.2
 
 channel_selection:
   module: channel_selection_main
   params:
     io:
-      figure_dir: figures
       output_dir: data/channel_selection
     selections:
       - module: channel_selection.active

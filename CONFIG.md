@@ -35,31 +35,35 @@ Note that the signal frequency is available in `params.signal_freq` as a global 
 
 ## Sample Collection (`extract_samples.py`)
 ### **`params.io`**
-- **`textgrid_root`**: Root directory containing TextGrid files.
 - **`output_dir`**: Directory to save extracted samples.
     - Each `.npz` file will be named `subject_{id}.npz`.
     - A configuration file `config.yaml` will also be saved in this directory with all settings used for pre-processing and sample collection.
-- **`recording_dir`**: (optional) Only required when running this file separately. Directory containing ECoG and audio `.npz` files.
-### **`params.settings`**
-- **`syllable_identifiers`**: List of syllable identifies in the textgrid files.
-    Example: `["i", "a"]`
-- **`overwrite`**: Whether to overwrite existing files. Default: `false`
+- **`recording_dir`**: (optional) Only required when running this file separately. Directory containing the data files where samples are extracted from.
+- **`overwrite`**: (optional) Whether to overwrite existing files. Default: `false`
+### **`params.modules`**
+- **`interval_extractor`**:
+    - **`module`**: str, the module used for extracting intervals.
+    - **`function`**: (optional) str, the function in the module corresponding to interval extraction. Default is `get_intervals`.
+- **`sample_extractor`**:
+    - **`module`** str, the module used for extracting samples based on the intervals.
+    - **`function`**: (optional) str, the function in the module corresponding to interval extraction. Default is `get_samples`. The function must take two arguments:
+        - `intervals`: Dict[int, pd.DataFrame], the intervals extracted from each block
+        - `params`: module-specific parameters. Subject-specific arguments defined below are taken, as well as general arguments:
+            - `subject_id`: str, the identifier for the subject.
+            - `data_dir`: str, the director where data files are stored.
+            - `output_path`: the path to the output `.npz` file. 
+    and save the extracted samples into `params.output_path`. 
 ### **`subjects`**: subject specific parameters
-- **`textgrid_dir`**: Subdirectory under `textgrid_root` containing TextGrid files for the subject.  
-    Example: `subject_24`
-- **`rest_period`**: Rest period (in seconds) for statistical tests.  
-Example: `[0.5, 1.0]`
-- **`sample_length`**: Length (in seconds) of each sample (epoch) to extract from the whole recording.
-- **`start_offset`**: Offset (in seconds) to extract before the event. If not given, default is `0.0`.
-- **`tier_list`**: List of tiers (`str`) in the textgrid files to consider for sample extraction. If not given, all tiers will be used.
-- **`blocks`**: List of blocks (`int`) to process. If not given, all blocks will be extracted.
+- `subject_id`: please use subject id to name each part
+    - **`interval_extractor`**: 
+        - **`params`** parameters for interval extractor module specified above. See each interval extraction script for what parameters are required. (for example, `sample_collection.intervals_from_textgrids`)
+    - **`sample_extractor`**:
+        - **`params`** parameters for sample extractor module specified above. See each sample extraction script for what parameters are required. (for example, `sample_collection.samples_ecog_audio`)
 
 ## Channel selection {`channel_selection.py`}
 ### **`params.io`**
 - **`output_dir`**: Directory to save the results of channel selection.  
 Example: `channel_selection_results/`
-- **`figure_dir`**: Directory to save generated figures (optional).  
-Example: `figures/`
 - **`sample_dir`**: (optional) Only required when running this file separately. Directory containing `.npz` files for each subject.
 ### **`params.selections`**: The modules for selecting channels
 All results will be saved into a single configuration file. 

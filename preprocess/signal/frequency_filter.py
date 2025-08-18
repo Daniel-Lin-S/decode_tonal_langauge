@@ -52,7 +52,8 @@ def run(data: np.ndarray, params: Namespace) -> np.ndarray:
         elif method == 'butter':
             if "freqs" not in method_params:
                 raise ValueError(
-                    "Butterworth filter requires 'freq_range' in params."
+                    "freqs must be specified when using Butterworth filter. "
+                    "Please provide a tuple (low_freq, high_freq) "
                 )
             signals = butter_filter(
                 data,
