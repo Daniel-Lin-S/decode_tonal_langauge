@@ -82,7 +82,8 @@ def get_intervals(
                 total_len = get_textgrid_time(tg, tier_list)
                 print(
                     f'Maximum time for block {block_number}:',
-                    total_len, ' s'
+                    total_len, ' s',
+                    flush=True
                 )
 
                 intervals[block_number] = block_data

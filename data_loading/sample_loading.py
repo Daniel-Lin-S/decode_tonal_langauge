@@ -151,7 +151,7 @@ class ClassificationSampleHandler:
             Dictionary mapping target names to the number of classes.
         """
         class_labels_dict = getattr(self.params, 'class_labels', {})
-        print(class_labels_dict)
+        print('Class label mapping: ', class_labels_dict)
 
         if len(self.targets) > 1:
             class_labels = []

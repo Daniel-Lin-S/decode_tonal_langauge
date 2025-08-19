@@ -85,6 +85,8 @@ def train_separate_targets(
         for target in params.targets
     } if "confusion_matrix" in metrics else None
 
+    print('Training with seeds ', seeds, flush=True)
+
     for i, seed in enumerate(seeds):
         set_seeds(int(seed))
         all_preds: Dict[str, np.ndarray] = {}
@@ -171,7 +173,9 @@ def train_separate_targets(
             all_preds[target] = preds
 
             target_metrics = compute_classification_metrics(
-                all_true[target], all_preds[target], metrics=metrics
+                all_true[target], all_preds[target],
+                n_classes=n_classes_dict[target],
+                metrics=metrics
             )
 
             for m in metrics:
@@ -183,7 +187,7 @@ def train_separate_targets(
                 individual_confusion_mat[target] += target_metrics["confusion_matrix"]
 
         joint_metrics = compute_classification_metrics_joint(
-            all_true, all_preds, metrics=metrics,
+            all_true, all_preds, n_classes, metrics=metrics,
             verbose=verbose > 1
         )
 
@@ -193,6 +197,14 @@ def train_separate_targets(
             metric_values[m].append(joint_metrics[m])
 
         if confusion_mat is not None and "confusion_matrix" in joint_metrics:
+            confusion_mat_run = joint_metrics["confusion_matrix"]
+            if confusion_mat_run.shape[0] != n_classes or confusion_mat_run.shape[1] != n_classes:
+                raise ValueError(
+                    f"Confusion matrix shape mismatch: expected ({n_classes}, {n_classes}), "
+                    f"got {confusion_mat_run.shape}. "
+                    f"Seed: {seed}, targets: {params.targets}, "
+                )
+
             confusion_mat += joint_metrics["confusion_matrix"]
 
     result_info = {

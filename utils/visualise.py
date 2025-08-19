@@ -55,18 +55,28 @@ def plot_confusion_matrix(
     plt.xlabel('Predicted Label', fontsize=18)
     plt.ylabel('True Label', fontsize=18)
 
+    n_labels = confusion_matrix.shape[0]
+    if n_labels > 20:
+        label_fontsize = 10
+    elif n_labels > 10:
+        label_fontsize = 12
+    else:
+        label_fontsize = 14
+
     if label_names is not None:
         plt.xticks(
             np.arange(len(label_names)), label_names,
-            rotation=45, fontsize=14
+            rotation=45, fontsize=label_fontsize
         )
         plt.yticks(
             np.arange(len(label_names)), label_names,
-            fontsize=14
+            fontsize=label_fontsize
         )
     else:
-        plt.xticks(np.arange(confusion_matrix.shape[1]), fontsize=14)
-        plt.yticks(np.arange(confusion_matrix.shape[0]), fontsize=14)
+        plt.xticks(
+            np.arange(confusion_matrix.shape[1]), fontsize=label_fontsize)
+        plt.yticks(
+            np.arange(confusion_matrix.shape[0]), fontsize=label_fontsize)
 
     if add_numbers:
         for i in range(confusion_matrix.shape[0]):

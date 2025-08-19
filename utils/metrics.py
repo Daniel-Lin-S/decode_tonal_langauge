@@ -4,6 +4,7 @@ from sklearn import metrics as skmetrics
 
 def compute_classification_metrics(
         true: np.ndarray, preds: np.ndarray,
+        n_classes: int,
         metrics: list = ['accuracy'],
         verbose: bool = False
     ) -> dict:
@@ -31,17 +32,30 @@ def compute_classification_metrics(
         A dictionary where keys are metric names and
         values are the computed metric values.
     """
+    if not isinstance(n_classes, int):
+        raise ValueError(
+            "n_classes must be an integer. "
+            f"Got {n_classes} of type {type(n_classes)}. "
+        )
+
     if verbose:
         print('Unique labels in true: {}'.format(set(true)))
         print('Unique predictions in preds: {}'.format(set(preds)))
 
+    # ensure the shape of confusion matrix is consistent
+    all_labels = np.arange(n_classes)
+
     metric_funcs = {
         'accuracy': skmetrics.accuracy_score,
-        'f1_score': lambda y_true, y_pred: skmetrics.f1_score(y_true, y_pred, average='weighted'),
-        'precision': lambda y_true, y_pred: skmetrics.precision_score(y_true, y_pred, average='weighted'),
-        'recall': lambda y_true, y_pred: skmetrics.recall_score(y_true, y_pred, average='weighted'),
+        'f1_score': lambda y_true, y_pred: skmetrics.f1_score(
+            y_true, y_pred, average='weighted'),
+        'precision': lambda y_true, y_pred: skmetrics.precision_score(
+            y_true, y_pred, average='weighted'),
+        'recall': lambda y_true, y_pred: skmetrics.recall_score(
+            y_true, y_pred, average='weighted'),
         'cohen_kappa': skmetrics.cohen_kappa_score,
-        'confusion_matrix': skmetrics.confusion_matrix
+        'confusion_matrix': lambda y_true, y_pred: skmetrics.confusion_matrix(
+            y_true, y_pred, labels=all_labels),
     }
 
     results = {}
@@ -66,6 +80,7 @@ def compute_classification_metrics(
 
 def compute_classification_metrics_joint(
         all_true: dict, all_preds: dict,
+        n_classes: int,
         metrics: list = ['accuracy'],
         verbose: bool = False
     ) -> dict:
@@ -82,6 +97,8 @@ def compute_classification_metrics_joint(
     all_preds : dict
         A dictionary where keys are target variable names
         and values are arrays of predicted labels.
+    n_classes : int
+        Total number of classes across all targets.
     metrics : list, optional
         A list of metric names to compute. Names should correspond
         to functions in ``sklearn.metrics`` (e.g. 'accuracy',
@@ -114,10 +131,9 @@ def compute_classification_metrics_joint(
     all_true = {target: all_true[target].astype(int) for target in targets}
     all_preds = {target: all_preds[target].astype(int) for target in targets}
 
-    # Flatten the joint true and predicted labels into single numeric arrays
-    n_classes = [len(np.unique(all_true[target])) for target in targets]
+    n_classes_list = [len(np.unique(all_true[target])) for target in targets]
 
-    multipliers = np.array([np.prod(n_classes[i + 1:]) for i in range(len(n_classes))])
+    multipliers = np.array([np.prod(n_classes_list[i + 1:]) for i in range(len(n_classes_list))])
 
     joint_true = np.sum(
         np.stack(
@@ -136,4 +152,6 @@ def compute_classification_metrics_joint(
         axis=1
     )
 
-    return compute_classification_metrics(joint_true, joint_preds, metrics)
+    return compute_classification_metrics(
+        joint_true, joint_preds, n_classes, metrics, verbose
+    )

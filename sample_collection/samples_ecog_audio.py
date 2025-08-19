@@ -92,7 +92,7 @@ def get_samples(
             s for df in intervals.values() for s in df.get('syllable', [])
         })
 
-    print('Syllable mapping used: ', dict(enumerate(syllables)))
+    print('Syllable mapping used: ', dict(enumerate(syllables)), flush=True)
 
     for file in os.listdir(params.data_dir):
         if match_filename(file, recording_format, ['ecog']):
@@ -140,7 +140,8 @@ def get_samples(
 
             print(
                 f'ECoG recording length for block {block}:',
-                ecog_data.shape[1] / ecog_sampling_rate, ' s'
+                ecog_data.shape[1] / ecog_sampling_rate, ' s',
+                flush=True
             )
 
             erp_samples[block] = []
@@ -232,7 +233,8 @@ def get_samples(
 
             print(
                 f'Audio recording length for block {block}:',
-                audio_data.shape[1] / audio_sampling_rate, ' s'
+                audio_data.shape[1] / audio_sampling_rate, ' s',
+                flush=True
             )
 
             audio_samples[block] = []
@@ -296,12 +298,12 @@ def get_samples(
         for block in ecog_block_ids:
             all_ecog_samples_rest.append(ecog_rest_samples[block])
         all_ecog_samples_rest = np.concatenate(all_ecog_samples_rest, axis=0)
-        print('ECoG rest samples shape:', all_ecog_samples_rest.shape)
+        print('ECoG rest samples shape:', all_ecog_samples_rest.shape, flush=True)
 
-    print('ECoG ERP samples shape:', all_erp_samples.shape)
-    print('Audio samples shape:', all_audio_samples.shape)
-    print('Syllable labels collected:', np.unique(all_syllable_labels))
-    print('Tone labels collected:', np.unique(all_tone_labels))
+    print('ECoG ERP samples shape:', all_erp_samples.shape, flush=True)
+    print('Audio samples shape:', all_audio_samples.shape, flush=True)
+    print('Syllable labels collected:', np.unique(all_syllable_labels), flush=True)
+    print('Tone labels collected:', np.unique(all_tone_labels), flush=True)
 
     # save as npz file
     output_data = {
@@ -318,7 +320,7 @@ def get_samples(
 
     if params.output_path is not None:
         np.savez(params.output_path, **output_data)
-        print(f"ECoG and audio samples saved to {params.output_path}")
+        print(f"ECoG and audio samples saved to {params.output_path}", flush=True)
 
     return output_data
 

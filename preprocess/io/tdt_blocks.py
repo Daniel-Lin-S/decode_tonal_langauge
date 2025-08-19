@@ -52,4 +52,4 @@ def save_block(
         sf = data_dict.get(f"{key}_sf")
         file_path = os.path.join(subject_output_dir, f"B{block_id}_{key}.npz")
         np.savez(file_path, data=value, sf=sf)
-        print(f"Saved {key} data to: {file_path}")
+        print(f"Saved {key} data to: {file_path}", flush=True)

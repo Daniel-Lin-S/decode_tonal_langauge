@@ -79,7 +79,7 @@ def run(pipeline_params, io_params, io_module, preprocessor_module, modalities_c
         pipeline_params.subject_dirs,
         getattr(pipeline_params, "subject_ids", None),
     ):
-        print(f"Processing block {block_id} of subject {subject_id}...")
+        print(f"Processing block {block_id} of subject {subject_id}...", flush=True)
 
         data_dict = io_module.load_block(block_path, io_params)
 

@@ -66,7 +66,8 @@ def run(config: dict) -> str:
         subject_path = os.path.join(recording_dir, f"subject_{subject_id}")
         if not os.path.exists(subject_path):
             print(
-                f"Recording directory {subject_path} not found. Skipping..."
+                f"Recording directory {subject_path} not found. Skipping...",
+                flush=True
             )
             continue
 
@@ -74,7 +75,10 @@ def run(config: dict) -> str:
             output_dir, f"subject_{subject_id}.npz"
         )
         if os.path.exists(subject_output_path) and not overwrite:
-            print(f"Output file {subject_output_path} already exists. Skipping ...")
+            print(
+                f"Output file {subject_output_path} already exists. Skipping ...",
+                flush=True
+            )
             continue
 
         interval_subject_cfg = subject_cfg.get("interval_extractor", {})
@@ -85,7 +89,8 @@ def run(config: dict) -> str:
         print(
             '------------------------ \n'
             f'Extracting all samples from {subject_path}'
-            '\n ------------------------'
+            '\n ------------------------',
+            flush=True
         )
 
         intervals = interval_extractor(interval_subject_params)
@@ -98,7 +103,8 @@ def run(config: dict) -> str:
 
         print(
             "Extracted intervals from annotation files: "
-            f"{len(intervals)} blocks found."
+            f"{len(intervals)} blocks found.",
+            flush=True
         )
 
         sample_subject_cfg = subject_cfg.get("sample_extractor", {}).copy()

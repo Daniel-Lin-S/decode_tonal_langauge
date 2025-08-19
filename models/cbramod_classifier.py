@@ -4,7 +4,7 @@ Please download pre-trained CBraMod weights from https://huggingface.co/weightin
 
 import torch
 import torch.nn as nn
-from einops.layers.torch import Rearrange
+import torch.nn.functional as F
 from scipy.signal import resample
 import importlib
 from inspect import signature
@@ -88,6 +88,8 @@ class CBraModClassifier(ClassifierModel):
 
         self.backbone.proj_out = nn.Identity()
 
+        self._compute_effective_input_length(input_length)
+
         if classification_head:
             module_name, class_name = classification_head.rsplit('.', 1)
             module = importlib.import_module(module_name)
@@ -96,7 +98,7 @@ class CBraModClassifier(ClassifierModel):
             constructor_args = signature(ClassifierHead.__init__).parameters
 
             self._initialise_classification_head_kwargs(
-                input_channels, input_length,
+                input_channels, self.effective_input_length,
                 classification_head_kwargs, constructor_args
             )
 
@@ -105,8 +107,8 @@ class CBraModClassifier(ClassifierModel):
                 **classification_head_kwargs
             )
         else:
-            self.classifier = nn.Linear(input_length * input_channels, n_classes)
-
+            self.classifier = nn.Linear(
+                self.effective_input_length * input_channels, n_classes)
 
         if freeze_backbone:
             for param in self.backbone.parameters():
@@ -132,10 +134,19 @@ class CBraModClassifier(ClassifierModel):
             num_samples = int(x.shape[2] * self.in_dim / self.input_sampling_rate)
             x = resample(x, num_samples, axis=2)
 
+        # pad when necessary
+        timepoints = x.shape[2]
+        remainder = timepoints % self.in_dim
+        if remainder != 0:
+            pad_size = self.in_dim - remainder
+            x = F.pad(x, (0, pad_size))
+
         # cut into patches
         x = x.view(x.shape[0], x.shape[1], -1, self.in_dim)
 
         features = self.backbone.forward(x)
+
+        features = features.view(features.shape[0], -1)
 
         return self.classifier(features)
 
@@ -155,3 +166,23 @@ class CBraModClassifier(ClassifierModel):
             classification_head_kwargs['input_channels'] = input_channels
         if 'input_length' in constructor_args:
             classification_head_kwargs['input_length'] = input_length
+
+    def _compute_effective_input_length(self, input_length: int) -> int:
+        """
+        Compute the effective input length after padding.
+
+        Parameters
+        ----------
+        input_length : int
+            Original length of the input time series.
+
+        Returns
+        -------
+        int
+            Effective input length after padding.
+        """
+        remainder = input_length % self.in_dim
+        if remainder == 0:
+            self.effective_input_length = input_length
+        else:
+            self.effective_input_length = input_length + (self.in_dim - remainder)
