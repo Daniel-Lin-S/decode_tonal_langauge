@@ -30,19 +30,11 @@ def get_samples(
         - end : float, end time of the interval (in seconds)
         - syllable : str, syllable associated with the interval
         - tone : int, tone associated with the interval
-    data_dir : str
-        Directory containing ECoG and audio files. (.npz forms)
-        Should have ECoG files with "3052Hz" in the name and
-        audio files with "sound" in the name.
-        The name of each file must start with "B[block_number]".
-        Required keys: `data` for the recording,
-        `sf` for sampling frequency.
-    output_path : str, optional
-        Path to save the extracted samples (in .npz forms)
-        If None, samples will not be saved.
     params : Namespace 
         Parameters for the extraction process.
         Should contain:
+        - output_path : str, path to save the resulting npz file
+        - data_dir : str, directory containing the processed recordings
         - sample_length : float, length of each sample in seconds
         - recording_format : str, format of the recording files,
           e.g. '.npz'

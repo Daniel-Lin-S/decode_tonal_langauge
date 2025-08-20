@@ -150,7 +150,7 @@ def read_textgrid(
 
     trial_list = [
         interval_data
-        for tier in tg.tiers if tier.name.lower() in tier_list
+        for tier in tg.tiers if tier.name in tier_list
         for interval in tier.intervals
         if (interval_data := extract_interval_func(
             interval, start_offset, end_offset)) is not None
@@ -291,12 +291,12 @@ def get_textgrid_time(
         The maximum end time of the intervals in the specified tiers.
     """
     if tier_list is None:
-        tier_list = [tier.name.lower() for tier in tg.tiers]
+        tier_list = [tier.name for tier in tg.tiers]
 
     max_time = 0.0
 
     for tier in tg.tiers:
-        if tier.name.lower() in tier_list:
+        if tier.name in tier_list:
             for interval in tier.intervals:
                 if interval.maxTime > max_time:
                     max_time = interval.maxTime

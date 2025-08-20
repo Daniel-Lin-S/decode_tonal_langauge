@@ -21,13 +21,18 @@ def get_samples(intervals: Dict[int, pd.DataFrame], params: Namespace) -> Dict[s
         'start' and 'end'.
     params : Namespace
         Expected fields:
-            - sample_length: float, length of onset sample in seconds.
-            - max_pre_length: float, maximum length for pre-onset sample in seconds.
-            - recording_format: str, file extension of recordings (default '.npz').
-            - onset_position: str, either 'start' or 'end' indicating where
-              speech onset is referenced in the interval (default 'start').
-            - output_path: optional, path to save resulting npz.
+            - output_path: path to save resulting npz.
             - data_dir: directory containing processed recordings.
+            - onset_range: (optional) tuple of two floats, specifying the range relative to onset_position
+              defaults to (0.0, 1.0).
+            - onset_position: (optional) str, either 'start' or 'end' indicating where
+              speech onset is referenced in the interval (default 'start').
+            - max_pre_length: (optional) float, maximum length for pre-onset sample in seconds.
+              defaults: same length as onset_range.
+            - recording_format: (optional) str, file extension of recordings
+              default: '.npz'. 
+            - syllable_identifiers: (optional) list of syllable identifiers to use.
+
     Returns
     -------
     Dict[str, np.ndarray]
@@ -35,8 +40,8 @@ def get_samples(intervals: Dict[int, pd.DataFrame], params: Namespace) -> Dict[s
         'audio_onset', 'audio_pre', 'audio_sf',
         'syllable', 'tone'.
     """
-    sample_length = getattr(params, 'sample_length', 1.0)
-    pre_length = getattr(params, 'max_pre_length', sample_length)
+    onset_range = getattr(params, 'onset_range', (0.0, 1.0))
+    pre_length = getattr(params, 'max_pre_length', onset_range[1] - onset_range[0])
     recording_format = getattr(params, 'recording_format', '.npz')
     onset_pos = getattr(params, 'onset_position', 'start')
 
@@ -92,24 +97,31 @@ def get_samples(intervals: Dict[int, pd.DataFrame], params: Namespace) -> Dict[s
             prev_end = 0.0
             for _, row in block_intervals.iterrows():
                 onset_time = row[onset_pos]
-                start_idx = int(onset_time * ecog_sf)
-                length_idx = int(sample_length * ecog_sf)
-                end_idx = start_idx + length_idx
-                if end_idx > ecog_data.shape[1]:
+                onset_start_idx = int((onset_time + onset_range[0]) * ecog_sf)
+                desired_length = int((onset_range[1] - onset_range[0]) * ecog_sf)
+                onset_end_idx = onset_start_idx + desired_length
+                if onset_end_idx > ecog_data.shape[1]:
                     raise ValueError(
-                        f"Requested sample exceeds ECoG data for block {block}.")
-                ecog_onset[block].append(ecog_data[:, start_idx:end_idx])
+                        f"Requested sample exceeds ECoG data for block {block}."
+                    )
+                
+                pre_end_idx = onset_start_idx
+                pre_start_time = onset_time + onset_range[0] - pre_length
+                if pre_start_time < prev_end + 0.1:
+                    warnings.warn(
+                        'Insufficient pre-onset ECoG data.'
+                        f'skipping interval [{row["start"]}, {row["end"]}] in block {block}.'
+                        f' Previous end time: {prev_end:.2f} s, requested start time: {pre_start_time:.2f} s.'
+                    )
+                    continue
 
-                pre_end = start_idx
-                pre_start_time = max(onset_time - pre_length, prev_end)
-                pre_start_idx = int(pre_start_time * ecog_sf)
-                pre_seg = ecog_data[:, pre_start_idx:pre_end]
-                desired = int(pre_length * ecog_sf)
-                if pre_seg.shape[1] < desired:
-                    pad = np.zeros((ecog_data.shape[0], desired - pre_seg.shape[1]))
-                    pre_seg = np.concatenate([pad, pre_seg], axis=1)
-                ecog_pre[block].append(pre_seg[:, -desired:])
+                length = int(pre_length * ecog_sf)
+                pre_start_idx = pre_end_idx - length
+
+                ecog_onset[block].append(ecog_data[:, onset_start_idx:onset_end_idx])
+                ecog_pre[block].append(ecog_data[:, pre_start_idx:pre_end_idx])
                 prev_end = row['end']
+
             ecog_onset[block] = np.array(ecog_onset[block])
             ecog_pre[block] = np.array(ecog_pre[block])
             tone_labels[block] = block_intervals['tone'].to_numpy()
@@ -147,24 +159,31 @@ def get_samples(intervals: Dict[int, pd.DataFrame], params: Namespace) -> Dict[s
             prev_end = 0.0
             for _, row in block_intervals.iterrows():
                 onset_time = row[onset_pos]
-                start_idx = int(onset_time * audio_sf)
-                length_idx = int(sample_length * audio_sf)
-                end_idx = start_idx + length_idx
-                if end_idx > audio_data.shape[1]:
+                onset_start_idx = int((onset_time + onset_range[0]) * audio_sf)
+                desired_length = int((onset_range[1] - onset_range[0]) * audio_sf)
+                onset_end_idx = onset_start_idx + desired_length
+                if onset_end_idx > audio_data.shape[1]:
                     raise ValueError(
                         f"Requested sample exceeds audio data for block {block}.")
-                audio_onset[block].append(audio_data[0, start_idx:end_idx].flatten())
 
-                pre_end = start_idx
-                pre_start_time = max(onset_time - pre_length, prev_end)
-                pre_start_idx = int(pre_start_time * audio_sf)
-                pre_seg = audio_data[0, pre_start_idx:pre_end].flatten()
-                desired = int(pre_length * audio_sf)
-                if pre_seg.shape[0] < desired:
-                    pad = np.zeros(desired - pre_seg.shape[0])
-                    pre_seg = np.concatenate([pad, pre_seg])
-                audio_pre[block].append(pre_seg[-desired:])
+                pre_end_idx = onset_start_idx
+                pre_start_time = onset_time + onset_range[0] - pre_length
+                if pre_start_time < prev_end + 0.1:
+                    warnings.warn(
+                        'Insufficient pre-onset audio data.'
+                        f'skipping interval [{row["start"]}, {row["end"]}] in block {block}.'
+                        f' Previous end time: {prev_end:.2f} s, requested start time: {pre_start_time:.2f} s.'
+                    )
+                    continue
+
+                length = int(pre_length * audio_sf)
+                pre_start_idx = pre_end_idx - length
+
+                audio_onset[block].append(
+                    audio_data[0, onset_start_idx:onset_end_idx].flatten())
+                audio_pre[block].append(audio_data[0, pre_start_idx:pre_end_idx].flatten())
                 prev_end = row['end']
+
             audio_onset[block] = np.array(audio_onset[block])
             audio_pre[block] = np.array(audio_pre[block])
 
@@ -193,6 +212,10 @@ def get_samples(intervals: Dict[int, pd.DataFrame], params: Namespace) -> Dict[s
         'syllable': all_syllable,
         'tone': all_tone,
     }
+
+    print(f'Prepared {len(all_ecog_onset)} ECoG sample pairs')
+    print(f'Prepared {len(all_audio_onset)} audio sample pairs')
+
     if params.output_path is not None:
         np.savez(params.output_path, **output)
         print(f"Samples saved to {params.output_path}")

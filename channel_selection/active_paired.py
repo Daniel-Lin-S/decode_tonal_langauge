@@ -11,7 +11,31 @@ from .utils import get_max_length
 
 
 def run(data: dict, params: dict) -> dict:
-    """Identify channels with significant onset vs pre-onset difference."""
+    """
+    Identify channels with significant onset vs pre-onset difference.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary containing ECoG data with keys:
+        - 'ecog_sf': sampling frequency of ECoG data.
+        - 'ecog_onset': ECoG onset samples (shape: [n_samples, n_channels, n_timepoints]).
+        - 'ecog_pre': ECoG pre-onset samples (shape: [n_samples, n_channels, n_timepoints]).
+    params : dict
+        Dictionary containing parameters with keys:
+        - 'p_threshold': p-value threshold for significance.
+        - 'active_time_threshold': minimum active length in seconds.
+        - 'onset_name' (optional): name of the onset data key (default: 'ecog_onset').
+        - 'pre_name' (optional): name of the pre-onset data key (default: 'ecog_pre').
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'selected_channels': list of indices of selected channels.
+        - 'max_lengths': list of maximum active lengths for each selected channel.
+        - 'p_values': list of p-values for each channel.
+    """
     onset_name = params.get('onset_name', 'ecog_onset')
     pre_name = params.get('pre_name', 'ecog_pre')
 
