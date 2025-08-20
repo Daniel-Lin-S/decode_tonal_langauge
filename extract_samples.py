@@ -10,7 +10,6 @@ import os
 import yaml
 import hashlib
 import importlib
-import numpy as np
 
 from utils.config import dict_to_namespace, update_configuration
 
