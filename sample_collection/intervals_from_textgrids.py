@@ -10,7 +10,8 @@ from .utils import extract_block_id
 
 
 def get_intervals(
-        params: Namespace
+        params: Namespace,
+        verbose: bool=False
     ) -> Dict[int, pd.DataFrame]:
     """
     Extracts information from TextGrid files in the specified directory.
@@ -38,6 +39,8 @@ def get_intervals(
         - dataset (optional) : str, dataset name to determine the extraction method.
             Supported values are 'liu2023' and 'zhang2024'.
             Defaults to 'liu2023'.
+    verbose : bool, optional
+        If True, prints additional information about the processing.
     
     Returns
     -------
@@ -79,12 +82,13 @@ def get_intervals(
                         "Please check the file format and content."
                     )
 
-                total_len = get_textgrid_time(tg, tier_list)
-                print(
-                    f'Maximum time for block {block_number}:',
-                    total_len, ' s',
-                    flush=True
-                )
+                if verbose:
+                    total_len = get_textgrid_time(tg, tier_list)
+                    print(
+                        f'Maximum time for block {block_number}:',
+                        total_len, ' s',
+                        flush=True
+                    )
 
                 intervals[block_number] = block_data
 
