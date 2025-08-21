@@ -1,0 +1,44 @@
+# Example configuration for extracting pitch contours and training a tone classifier
+
+pitch_extraction:
+  module: extract_pitch
+  params:
+    io:
+      sample_dir: data/samples               # directory with subject_*.npz
+      output_dir: data/pitch                # root directory for pitch outputs
+    pitch:
+      time_step: 0.01                       # seconds between pitch samples
+      pitch_floor: 75                       # Hz
+      pitch_ceiling: 500                    # Hz
+
+model:
+  model: models.simple_classifiers.LogisticRegressionClassifier
+  model_name: logistic
+  model_kwargs: {}
+
+training:
+  module: train_classifier
+  params:
+    io:
+      sample_dir: data/pitch/ecog_pitch_xxxxxx   # replace with actual hash after extraction
+      log_dir: logs
+    experiment:
+      targets: ["tone"]
+      features: pitch
+      separate_models: false
+      seed: 42
+      repeat: 1
+      device: cpu
+    training:
+      train_ratio: 0.7
+      vali_ratio: 0.1
+      test_ratio: 0.2
+      batch_size: 64
+      epochs: 10
+      lr: 0.001
+      patience: 5
+      log_every_n_steps: 10
+
+evaluation:
+  metrics: [accuracy, confusion_matrix]
+  metric_aggregates: [mean]
