@@ -1,13 +1,15 @@
 data
 audios
 figures
-logs
+*logs
 notebooks
 configs
 checkpoints
+pretrained_weights
 results
 tensorboards
 trial/*
 local_*
+temp_*
 *.sh
 __pycache__
